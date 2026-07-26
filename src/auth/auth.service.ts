@@ -3,7 +3,6 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -89,13 +88,27 @@ export class AuthService {
   );
 }
 
-    const token = await this.jwtService.signAsync({
-      sub: user.id,
-      email: user.email,
-    });
+    // Generate access token (15 min)
+    const accessToken = await this.jwtService.signAsync(
+      { sub: user.id, email: user.email },
+      { 
+        secret: process.env.JWT_ACCESS_SECRET || 'access-secret',
+        expiresIn: '15m',
+      }
+    );
+
+    // Generate refresh token (7 days)
+    const refreshToken = await this.jwtService.signAsync(
+      { sub: user.id, email: user.email },
+      {
+        secret: process.env.JWT_REFRESH_SECRET || 'refresh-secret',
+        expiresIn: '7d',
+      }
+    );
 
     return {
-      access_token: token,
+      access_token: accessToken,
+      refresh_token: refreshToken,
       user,
     };
   }
@@ -103,7 +116,7 @@ export class AuthService {
   async refreshToken(refreshToken: string) {
     try {
       const decoded = await this.jwtService.verifyAsync(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET,
+        secret: process.env.JWT_REFRESH_SECRET || 'refresh-secret',
       });
       
       const user = await this.prisma.user.findUnique({
@@ -124,10 +137,22 @@ export class AuthService {
 
       const newAccessToken = await this.jwtService.signAsync(
         { sub: user.id, email: user.email },
-        { secret: process.env.JWT_ACCESS_SECRET }
+        { 
+          secret: process.env.JWT_ACCESS_SECRET || 'access-secret',
+          expiresIn: '15m',
+        }
+      );
+
+      // Optionally rotate refresh token
+      const newRefreshToken = await this.jwtService.signAsync(
+        { sub: user.id, email: user.email },
+        {
+          secret: process.env.JWT_REFRESH_SECRET || 'refresh-secret',
+          expiresIn: '7d',
+        }
       );
       
-      return { access_token: newAccessToken, user };
+      return { access_token: newAccessToken, refresh_token: newRefreshToken, user };
     } catch (err) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -141,7 +166,7 @@ export class AuthService {
     
     try {
       const decoded = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_RESET_SECRET,
+        secret: process.env.JWT_RESET_SECRET || 'reset-secret',
       });
       if (decoded.sub !== user.id) {
         throw new BadRequestException('Invalid token');
@@ -161,7 +186,7 @@ export class AuthService {
   async verifyEmail(token: string) {
     try {
       const decoded = await this.jwtService.verifyAsync(token, {
-        secret: process.env.JWT_VERIFICATION_SECRET,
+        secret: process.env.JWT_VERIFICATION_SECRET || 'verify-secret',
       });
       await this.prisma.user.update({
         where: { id: decoded.sub },
@@ -186,7 +211,7 @@ export class AuthService {
     const token = await this.jwtService.signAsync(
       { sub: user.id },
       {
-        secret: process.env.JWT_RESET_SECRET,
+        secret: process.env.JWT_RESET_SECRET || 'reset-secret',
         expiresIn: '1h'
       }
     );

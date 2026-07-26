@@ -13,7 +13,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     PrismaModule,
     PassportModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'secret-key',
+      secret: process.env.JWT_ACCESS_SECRET || 'access-secret',
       signOptions: {
         expiresIn: '15m', // Shorter lived access tokens
       },
@@ -21,5 +21,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtAuthGuard],
+  exports: [JwtAuthGuard, JwtModule],
 })
 export class AuthModule {}

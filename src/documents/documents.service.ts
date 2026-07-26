@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ChromaService } from '../chroma/chroma.service';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { DocumentResponseDto, DocumentDetailResponseDto } from './dto/document-response.dto';
 
 @Injectable()
 export class DocumentsService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService,
+        private chroma: ChromaService,
+    ) { }
 
     async create(dto: UploadDocumentDto): Promise<DocumentResponseDto> {
         const document = await this.prisma.document.create({
@@ -79,6 +83,26 @@ export class DocumentsService {
     }
 
     async delete(id: string): Promise<void> {
+        // 1. Fetch document with chunks to get Chroma vector IDs
+        const document = await this.prisma.document.findUnique({
+            where: { id },
+            include: { chunks: true },
+        });
+
+        if (!document) {
+            throw new NotFoundException(`Document with ID "${id}" not found`);
+        }
+
+        // 2. Delete embeddings from Chroma first
+        const chromaIds = document.chunks
+            .filter((chunk) => chunk.vectorId)
+            .map((chunk) => chunk.vectorId!);
+
+        if (chromaIds.length > 0) {
+            await this.chroma.deleteDocuments(chromaIds);
+        }
+
+        // 3. Then delete from Postgres (cascades to DocumentChunks)
         await this.prisma.document.delete({
             where: { id },
         });

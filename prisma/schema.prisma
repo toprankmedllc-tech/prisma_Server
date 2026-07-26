@@ -108,6 +108,10 @@ model User {
 
   emailVerifiedAt DateTime?
 
+  // Track which questions the user has reviewed or skipped (for review dashboard)
+  reviewedQuestions String[] @default([])
+  skippedQuestions  String[] @default([])
+
   sessions Session[]
 
   attempts QuestionAttempt[]
@@ -303,6 +307,7 @@ model Question {
 
   isPublished Boolean @default(false)
   reviewed    Boolean @default(false)
+  rejected    Boolean @default(false)
   reviewedBy  String?     // User ID of the reviewer (audit trail)
   reviewNotes Json?     // Flexible attribute-level review notes (e.g. { stem: "...", choices: { "choiceId": "..." }, explanation: "..." })
 

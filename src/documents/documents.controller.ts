@@ -7,13 +7,19 @@ import {
     Body,
     HttpCode,
     HttpStatus,
+    UseGuards,
 } from '@nestjs/common';
 import { DocumentsService } from './documents.service';
 
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { DocumentResponseDto, DocumentDetailResponseDto } from './dto/document-response.dto';
 import { DocumentIngestionService } from './documents-ingestion.service';
+import { ApiCookieAuth, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+@ApiTags('Documents')
+@ApiCookieAuth('access_token')
+@UseGuards(JwtAuthGuard)
 @Controller('documents')
 export class DocumentsController {
     constructor(

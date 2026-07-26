@@ -1,7 +1,5 @@
-import { Body, Controller, Post, Get, Param, Req, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-import { Request } from 'express';
-
+import { Body, Controller, Post, Get, Param, Req, Res, UseGuards, UnauthorizedException } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -9,6 +7,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 
 interface RequestWithUser extends Request {
   user: {
@@ -17,24 +16,70 @@ interface RequestWithUser extends Request {
   };
 }
 
+@ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
+    res.cookie('access_token', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 15 * 60 * 1000,
+      path: '/',
+    });
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/auth/refresh',
+    });
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/',
+    });
+  }
+
+  private clearAuthCookies(res: Response) {
+    res.clearCookie('access_token', { path: '/' });
+    res.clearCookie('refresh_token', { path: '/' });
+    res.clearCookie('refresh_token', { path: '/auth/refresh' });
+  }
+
   @Post('register')
   async register(@Body() dto: RegisterDto) {
-    console.log("dto--->",dto)
     return this.authService.register(dto);
   }
 
   @Post('login')
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  @ApiOperation({ summary: 'Login with email/password. Sets httpOnly cookies for auth.' })
+  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto);
+    this.setAuthCookies(res, result.access_token, result.refresh_token);
+    return result;
   }
 
   @Post('refresh')
-  async refreshToken(@Body() dto: RefreshTokenDto) {
-    return this.authService.refreshToken(dto.refreshToken);
+  @ApiOperation({ summary: 'Refresh access token using refresh_token from cookie or body.' })
+  async refreshToken(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const refreshToken = req.cookies?.['refresh_token'] || dto.refreshToken;
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token is required');
+    }
+    const result = await this.authService.refreshToken(refreshToken);
+    this.setAuthCookies(res, result.access_token, result.refresh_token);
+    return result;
   }
 
   @Post('forgot-password')
@@ -44,11 +89,7 @@ export class AuthController {
 
   @Post('reset-password')
   async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(
-      dto.email,
-      dto.token,
-      dto.newPassword,
-    );
+    return this.authService.resetPassword(dto.email, dto.token, dto.newPassword);
   }
 
   @Get('verify-email/:token')
@@ -64,7 +105,9 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async logout(@Req() req: RequestWithUser) {
-    return this.authService.logout(req.user.id);
+  async logout(@Req() req: RequestWithUser, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.logout(req.user.id);
+    this.clearAuthCookies(res);
+    return result;
   }
 }

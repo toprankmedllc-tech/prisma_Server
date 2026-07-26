@@ -6,9 +6,10 @@ import { LLMModule } from '../llm/llm.module';
 
 import { PrismaModule } from '../prisma/prisma.module';
 import { ChromaModule } from '../chroma/chroma.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-    imports: [LLMModule, ChromaModule, PrismaModule],
+    imports: [LLMModule, ChromaModule, PrismaModule, AuthModule],
     controllers: [QuestionsController],
     providers: [QuestionsService, QuestionGenerationService],
     exports: [QuestionsService, QuestionGenerationService],

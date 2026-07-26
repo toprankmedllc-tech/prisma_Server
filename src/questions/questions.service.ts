@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { QuestionResponseDto } from './dto/response.dto';
+import { QuestionResponseDto, ReviewDashboardItemDto, QuestionDetailDto } from './dto/response.dto';
 import { CognitiveLevel, Difficulty, QuestionSource, QuestionSourceType, Tag, Topic } from '@prisma/client';
 
 @Injectable()
@@ -707,12 +707,13 @@ export class QuestionsService {
     }
 
     // ============================================
-    // NEW: Review a question (approve or add notes)
+    // NEW: Review a question (approve, reject, or add notes)
+    // Also tracks the question in the reviewer's reviewedQuestions list
     // ============================================
     async reviewQuestion(
         id: string,
-        dto: { reviewed: boolean; reviewedBy?: string; reviewNotes?: Record<string, any> },
-    ): Promise<QuestionResponseDto> {
+        dto: {  rejected?: boolean; reviewedBy?: string; reviewNotes?: Record<string, any> },
+    ): Promise<QuestionDetailDto> {
         const question = await this.prisma.question.findUnique({
             where: { id },
         });
@@ -721,49 +722,341 @@ export class QuestionsService {
             throw new NotFoundException(`Question with ID "${id}" not found`);
         }
 
-        // Basic review: sets reviewed=true, stores reviewNotes and reviewedBy
+        // Build update data
+        const updateData: any = {
+            reviewed: true,
+        };
+
+        // Handle rejected field
+        if (dto.rejected !== undefined) {
+            updateData.rejected = dto.rejected;
+        }
+
+        // If approved (reviewed=true, rejected=false), clear the rejected flag
+        if (dto.rejected === false) {
+            updateData.rejected = false;
+        }
+
+        if (dto.reviewNotes !== undefined) {
+            updateData.reviewNotes = dto.reviewNotes;
+        }
+
+        if (dto.reviewedBy !== undefined) {
+            updateData.reviewedBy = dto.reviewedBy;
+        }
+
         // Does NOT publish the question yet - that happens after quality review
         const updatedQuestion = await this.prisma.question.update({
             where: { id },
-            data: {
-                reviewed: dto.reviewed,
-                ...(dto.reviewNotes !== undefined
-                    ? { reviewNotes: dto.reviewNotes }
-                    : {}),
-                ...(dto.reviewedBy !== undefined
-                    ? { reviewedBy: dto.reviewedBy }
-                    : {}),
-            },
+            data: updateData,
             include: {
+                topic: {
+                    include: { subject: true },
+                },
                 choices: {
                     orderBy: { order: 'asc' },
                 },
-                tags: {
-                    include: {
-                        tag: true,
-                    },
+                wrongOptions: {
+                    orderBy: { order: 'asc' },
                 },
-                topic: true,
+                vitals: true,
+                qualityReview: true,
+                tags: {
+                    include: { tag: true },
+                },
             },
         });
 
+        // Track the question in the reviewer's reviewedQuestions list
+        if (dto.reviewedBy) {
+            const user = await this.prisma.user.findUnique({
+                where: { id: dto.reviewedBy },
+                select: { reviewedQuestions: true },
+            });
+
+            if (user && !user.reviewedQuestions.includes(id)) {
+                await this.prisma.user.update({
+                    where: { id: dto.reviewedBy },
+                    data: {
+                        reviewedQuestions: {
+                            push: id,
+                        },
+                    },
+                });
+            }
+        }
+
+        return this.mapToDetailDto(updatedQuestion);
+    }
+
+    // ============================================
+    // NEW: Get review dashboard questions (random, up to 20, by subject/topic)
+    // Excludes questions the user has already reviewed or skipped
+    // ============================================
+    async getReviewDashboardQuestions(filters: {
+        userId?: string;
+        subject?: string;
+        topic?: string;
+        limit?: number;
+    }): Promise<ReviewDashboardItemDto[]> {
+        const { userId, subject, topic, limit = 20 } = filters;
+
+        // Get the user's already-processed question IDs
+        let reviewedQuestionIds: string[] = [];
+        let skippedQuestionIds: string[] = [];
+
+        if (userId) {
+            const user = await this.prisma.user.findUnique({
+                where: { id: userId },
+                select: { reviewedQuestions: true, skippedQuestions: true },
+            });
+            if (user) {
+                reviewedQuestionIds = user.reviewedQuestions;
+                skippedQuestionIds = user.skippedQuestions;
+            }
+        }
+
+        const excludeIds = [...new Set([...reviewedQuestionIds, ...skippedQuestionIds])];
+
+        const where: any = {};
+        const topicWhere: any = {};
+
+        if (subject) {
+            topicWhere.subject = {
+                name: { equals: subject, mode: 'insensitive' },
+            };
+        }
+
+        if (topic) {
+            topicWhere.name = { equals: topic, mode: 'insensitive' };
+        }
+
+        if (Object.keys(topicWhere).length > 0) {
+            where.topic = topicWhere;
+        }
+
+        // Exclude already-processed questions
+        if (excludeIds.length > 0) {
+            where.id = { notIn: excludeIds };
+        }
+
+        // Get total count first
+        const totalCount = await this.prisma.question.count({ where });
+
+        if (totalCount === 0) {
+            return [];
+        }
+
+        // Use raw query to get random questions efficiently
+        const take = Math.min(limit, totalCount);
+
+        // Build parameterized query with exclude list
+        let paramIndex = 1;
+        const params: any[] = [];
+        const conditions: string[] = [];
+
+        if (subject) {
+            conditions.push(`LOWER(s.name) = LOWER($${paramIndex})`);
+            params.push(subject);
+            paramIndex++;
+        }
+
+        if (topic) {
+            conditions.push(`LOWER(t.name) = LOWER($${paramIndex})`);
+            params.push(topic);
+            paramIndex++;
+        }
+
+        if (excludeIds.length > 0) {
+            // Build a parameterized NOT IN clause
+            const placeholders = excludeIds.map((_, i) => `$${paramIndex + i}`);
+            conditions.push(`q.id NOT IN (${placeholders.join(',')})`);
+            params.push(...excludeIds);
+            paramIndex += excludeIds.length;
+        }
+
+        const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+
+        const questions: any[] = await this.prisma.$queryRawUnsafe(`
+            SELECT q.id, q.stem, q."sourceType", q.difficulty, q.reviewed, q.rejected, q."isPublished", q."createdAt",
+                   t.id as topic_id, t.name as topic_name,
+                   s.id as subject_id, s.name as subject_name
+            FROM "Question" q
+            JOIN "Topic" t ON t.id = q."topicId"
+            JOIN "Subject" s ON s.id = t."subjectId"
+            ${whereClause}
+            ORDER BY RANDOM()
+            LIMIT ${take}
+        `, ...params);
+
+        return questions.map((q: any) => ({
+            id: q.id,
+            stem: q.stem,
+            sourceType: q.sourceType,
+            difficulty: q.difficulty,
+            reviewed: q.reviewed,
+            rejected: q.rejected,
+            isPublished: q.isPublished,
+            createdAt: q.createdAt,
+            topic: {
+                id: q.topic_id,
+                name: q.topic_name,
+                subject: {
+                    id: q.subject_id,
+                    name: q.subject_name,
+                },
+            },
+        }));
+    }
+
+    // ============================================
+    // NEW: Get full question detail for review
+    // ============================================
+    async findFullDetail(id: string): Promise<QuestionDetailDto> {
+        const question = await this.prisma.question.findUnique({
+            where: { id },
+            include: {
+                topic: {
+                    include: { subject: true },
+                },
+                choices: {
+                    orderBy: { order: 'asc' },
+                },
+                wrongOptions: {
+                    orderBy: { order: 'asc' },
+                },
+                vitals: true,
+                qualityReview: true,
+                tags: {
+                    include: { tag: true },
+                },
+            },
+        });
+
+        if (!question) {
+            throw new NotFoundException(`Question with ID "${id}" not found`);
+        }
+
+        return this.mapToDetailDto(question);
+    }
+
+    // ============================================
+    // HELPER: Map question to full detail DTO
+    // ============================================
+    private mapToDetailDto(question: any): QuestionDetailDto {
         return {
-            id: updatedQuestion.id,
-            stem: updatedQuestion.stem,
-            explanation: updatedQuestion.explanation,
-            difficulty: updatedQuestion.difficulty,
-            source: updatedQuestion.source,
-            topicId: updatedQuestion.topicId,
-            choices: updatedQuestion.choices.map((c) => ({
+            id: question.id,
+            stem: question.stem,
+            leadInQuestion: question.leadInQuestion,
+            explanation: question.explanation,
+            source: question.source,
+            sourceType: question.sourceType,
+            sourceRow: question.sourceRow,
+            sourceFile: question.sourceFile,
+            qid: question.qid,
+            topicId: question.topicId,
+            system: question.system,
+            discipline: question.discipline,
+            subsystem: question.subsystem,
+            cognitiveLevel: question.cognitiveLevel,
+            difficulty: question.difficulty,
+            trapType: question.trapType,
+            patientProfile: question.patientProfile,
+            chiefComplaint: question.chiefComplaint,
+            keySymptoms: question.keySymptoms,
+            physicalExam: question.physicalExam,
+            mainClue: question.mainClue,
+            supportingClue: question.supportingClue,
+            correctAnswerLetter: question.correctAnswerLetter,
+            correctAnswerText: question.correctAnswerText,
+            stepByStepReasoning: question.stepByStepReasoning,
+            educationalObjective: question.educationalObjective,
+            buzzwords: question.buzzwords,
+            buzzwordCombinationCorrect: question.buzzwordCombinationCorrect,
+            relatedConcepts: question.relatedConcepts,
+            suggestedImages: question.suggestedImages,
+            importedAt: question.importedAt,
+            importedBy: question.importedBy,
+            isPublished: question.isPublished,
+            reviewed: question.reviewed,
+            rejected: question.rejected,
+            reviewedBy: question.reviewedBy,
+            reviewNotes: question.reviewNotes,
+            createdAt: question.createdAt,
+            updatedAt: question.updatedAt,
+            topic: {
+                id: question.topic.id,
+                name: question.topic.name,
+                subject: {
+                    id: question.topic.subject.id,
+                    name: question.topic.subject.name,
+                },
+            },
+            choices: question.choices.map((c: any) => ({
                 id: c.id,
                 text: c.text,
                 isCorrect: c.isCorrect,
                 order: c.order,
             })),
-            tags: updatedQuestion.tags.map((qt) => qt.tag.name),
-            isPublished: updatedQuestion.isPublished,
-            createdAt: updatedQuestion.createdAt,
+            wrongOptions: question.wrongOptions?.map((wo: any) => ({
+                id: wo.id,
+                letter: wo.letter,
+                text: wo.text,
+                explanation: wo.explanation,
+                buzzwordCombo: wo.buzzwordCombo,
+                order: wo.order,
+            })) || [],
+            vitals: question.vitals
+                ? {
+                    bloodPressure: question.vitals.bloodPressure,
+                    heartRate: question.vitals.heartRate,
+                    pulseOximetry: question.vitals.pulseOximetry,
+                    temperature: question.vitals.temperature,
+                    respiratoryRate: question.vitals.respiratoryRate,
+                }
+                : null,
+            qualityReview: question.qualityReview
+                ? {
+                    id: question.qualityReview.id,
+                    medicalAccuracy: question.qualityReview.medicalAccuracy,
+                    usmleStyle: question.qualityReview.usmleStyle,
+                    explanationQuality: question.qualityReview.explanationQuality,
+                    originality: question.qualityReview.originality,
+                    grammar: question.qualityReview.grammar,
+                    vignetteReview: question.qualityReview.vignetteReview,
+                    buzzwordReview: question.qualityReview.buzzwordReview,
+                    reviewedBy: question.qualityReview.reviewedBy,
+                    reviewedAt: question.qualityReview.reviewedAt,
+                }
+                : null,
+            tags: question.tags.map((qt: any) => qt.tag.name),
         };
+    }
+
+    // ============================================
+    // NEW: Mark a question as skipped by a user
+    // ============================================
+    async markQuestionAsSkipped(userId: string, questionId: string): Promise<void> {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { skippedQuestions: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException(`User with ID "${userId}" not found`);
+        }
+
+        // Only add if not already in the list
+        if (!user.skippedQuestions.includes(questionId)) {
+            await this.prisma.user.update({
+                where: { id: userId },
+                data: {
+                    skippedQuestions: {
+                        push: questionId,
+                    },
+                },
+            });
+        }
     }
 
     // ============================================
@@ -810,6 +1103,25 @@ export class QuestionsService {
                 reviewed: true,
             },
         });
+
+        // Track the question in the reviewer's reviewedQuestions list
+        if (dto.reviewedBy) {
+            const user = await this.prisma.user.findUnique({
+                where: { id: dto.reviewedBy },
+                select: { reviewedQuestions: true },
+            });
+
+            if (user && !user.reviewedQuestions.includes(questionId)) {
+                await this.prisma.user.update({
+                    where: { id: dto.reviewedBy },
+                    data: {
+                        reviewedQuestions: {
+                            push: questionId,
+                        },
+                    },
+                });
+            }
+        }
 
         return qualityReview;
     }

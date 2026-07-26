@@ -10,13 +10,28 @@ import {
     HttpCode,
     HttpStatus,
     BadRequestException,
+    UseGuards,
+    Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { QuestionsService } from './questions.service';
 import { QuestionGenerationService } from './question-generation.service';
 import { GenerateQuestionsDto, ReviewQuestionDto, CreateQualityReviewDto, UnpublishByDisciplineDto } from './dto/request.dto';
-import { GenerateQuestionsResponseDto, QuestionResponseDto } from './dto/response.dto';
-import { ApiQuery } from '@nestjs/swagger';
+import { ReviewActionDto } from './dto/review-action.dto';
+import { GenerateQuestionsResponseDto, QuestionResponseDto, QuestionDetailDto, ReviewDashboardItemDto } from './dto/response.dto';
+import { ApiQuery, ApiCookieAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+interface RequestWithUser extends Request {
+    user: {
+        id: string;
+        email: string;
+    };
+}
+
+@ApiTags('Questions')
+@ApiCookieAuth('access_token')
+@UseGuards(JwtAuthGuard)
 @Controller('questions')
 export class QuestionsController {
     constructor(
@@ -26,14 +41,38 @@ export class QuestionsController {
 
     @Post('generate')
     @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({ summary: 'Generate AI questions', description: 'Uses RAG (ChromaDB + LLM) to generate USMLE-style questions based on topic, difficulty, and question type. Returns newly created questions.' })
     async generateQuestions(@Body() dto: GenerateQuestionsDto): Promise<GenerateQuestionsResponseDto> {
         return this.questionGenerationService.generateQuestions(dto);
+    }
+
+    // ============================================
+    // REVIEW DASHBOARD: Get random questions by subject/topic
+    // ============================================
+    @Get('review-dashboard')
+    @ApiOperation({ summary: 'Review dashboard', description: 'Returns up to 20 random questions filtered by subject/topic for reviewer selection. Excludes questions the user has already reviewed or skipped. Used as the entry point for the review workflow.' })
+    @ApiQuery({ name: 'subject', required: false, type: String, description: 'Filter by subject name' })
+    @ApiQuery({ name: 'topic', required: false, type: String, description: 'Filter by topic name' })
+    @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max questions to return (default 20)' })
+    async getReviewDashboard(
+        @Req() req: RequestWithUser,
+        @Query('subject') subject?: string,
+        @Query('topic') topic?: string,
+        @Query('limit') limit?: string,
+    ): Promise<ReviewDashboardItemDto[]> {
+        return this.questionsService.getReviewDashboardQuestions({
+            userId: req.user.id,
+            subject,
+            topic,
+            limit: limit ? parseInt(limit) : 20,
+        });
     }
 
     // ============================================
     // ENHANCED: Get all questions with more filters
     // ============================================
     @Get()
+    @ApiOperation({ summary: 'List all questions', description: 'Paginated list of all questions with extensive filters (topic, difficulty, source, system, discipline, cognitive level, tag, search). Supports sorting and pagination.' })
     @ApiQuery({ name: 'topic', required: false, type: String })
     @ApiQuery({ name: 'topicId', required: false, type: String })
     @ApiQuery({ name: 'difficulty', required: false, type: String })
@@ -94,30 +133,70 @@ export class QuestionsController {
     }
 
     @Get(':id')
+    @ApiOperation({ summary: 'Get question by ID', description: 'Returns a single question with its choices, tags, and topic. Does not include wrong options, vitals, or quality review.' })
     async findOne(@Param('id') id: string): Promise<QuestionResponseDto> {
         return this.questionsService.findOne(id);
     }
 
-    @Patch(':id/publish')
-    async publish(@Param('id') id: string): Promise<QuestionResponseDto> {
-        return this.questionsService.publishQuestion(id);
+    // ============================================
+    // REVIEW: Get full question detail for review
+    // ============================================
+    @Get(':id/detail')
+    @ApiOperation({ summary: 'Get full question detail', description: 'Returns complete question data with all nested relations: choices, wrong options, vitals, quality review, tags, topic, and subject. Used for the review detail view.' })
+    async findDetail(@Param('id') id: string): Promise<QuestionDetailDto> {
+        return this.questionsService.findFullDetail(id);
     }
 
+    // @Patch(':id/publish')
+    // @ApiOperation({ summary: 'Publish a question', description: 'Sets isPublished to true. Use after quality review is complete to make the question visible to students.' })
+    // async publish(@Param('id') id: string): Promise<QuestionResponseDto> {
+    //     return this.questionsService.publishQuestion(id);
+    // }
+
     // ============================================
-    // NEW: Review a question (approve or add notes)
+    // REVIEW: Review a question (approve, reject, or add notes)
     // ============================================
     @Patch(':id/review')
+    @ApiOperation({ summary: 'Review a question', description: 'Mark a question as reviewed (approve or reject). Set  rejected=false to approve. Set rejected=true to reject. Returns full question detail after u set rejected = false  after that  send quality review data via api below to publish the question .' })
     async review(
+        @Req() req: RequestWithUser,
         @Param('id') id: string,
         @Body() dto: ReviewQuestionDto,
-    ): Promise<QuestionResponseDto> {
-        return this.questionsService.reviewQuestion(id, dto);
+    ): Promise<QuestionDetailDto> {
+        return this.questionsService.reviewQuestion(id, { ...dto, reviewedBy: dto.reviewedBy || req.user.id });
     }
 
     // ============================================
-    // NEW: Save / update quality review for a question
+    // REVIEW ACTION: Unified endpoint for review or skip
+    // ============================================
+    @Post(':id/review-action')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Review or skip a question', description: 'Unified endpoint to either review a question (approve/reject with notes) or skip it. When skipped, the question is added to the user\'s skipped list and will not appear in future review dashboard queries. When reviewed, the question is added to the user\'s reviewed list.' })
+    async reviewAction(
+        @Req() req: RequestWithUser,
+        @Param('id') id: string,
+        @Body() dto: ReviewActionDto,
+    ): Promise<QuestionDetailDto | { skipped: boolean }> {
+        const userId = req.user.id;
+
+        if (dto.action === 'skip') {
+            await this.questionsService.markQuestionAsSkipped(userId, id);
+            return { skipped: true };
+        }
+
+        // action === 'review'
+        return this.questionsService.reviewQuestion(id, {
+            rejected: dto.rejected,
+            reviewedBy: userId,
+            reviewNotes: dto.reviewNotes,
+        });
+    }
+
+    // ============================================
+    // QUALITY REVIEW: Save / update quality review for a question
     // ============================================
     @Patch(':id/quality-review')
+    @ApiOperation({ summary: 'Save quality review', description: 'Saves or updates the quality review for a question (medical accuracy, USMLE style, explanation quality, etc.). After saving, the question is automatically published.' })
     async saveQualityReview(
         @Param('id') id: string,
         @Body() dto: CreateQualityReviewDto,
@@ -126,38 +205,42 @@ export class QuestionsController {
     }
 
     // ============================================
-    // NEW: Unpublish all questions by discipline
+    // UNPUBLISH: Unpublish all questions by discipline
     // ============================================
-    @Post('unpublish-by-discipline')
-    @HttpCode(HttpStatus.OK)
-    async unpublishByDiscipline(
-        @Body() dto: UnpublishByDisciplineDto,
-    ): Promise<{ count: number }> {
-        return this.questionsService.unpublishByDiscipline(dto.discipline);
-    }
+    // @Post('unpublish-by-discipline')
+    // @HttpCode(HttpStatus.OK)
+    // @ApiOperation({ summary: 'Unpublish by discipline', description: 'Bulk unpublishes all published questions under a given discipline (e.g. Cardiology, Neurology). Sets isPublished=false and reviewed=false.' })
+    // async unpublishByDiscipline(
+    //     @Body() dto: UnpublishByDisciplineDto,
+    // ): Promise<{ count: number }> {
+    //     return this.questionsService.unpublishByDiscipline(dto.discipline);
+    // }
 
-    @Delete(':id')
-    @HttpCode(HttpStatus.NO_CONTENT)
-    async delete(@Param('id') id: string): Promise<void> {
-        return this.questionsService.deleteQuestion(id);
-    }
-
-    // ============================================
-    // NEW: Bulk delete endpoint
-    // ============================================
-    @Post('bulk-delete')
-    @HttpCode(HttpStatus.NO_CONTENT)
-    async bulkDelete(@Body('ids') ids: string[]): Promise<void> {
-        if (!ids || !Array.isArray(ids) || ids.length === 0) {
-            throw new BadRequestException('Please provide an array of question IDs');
-        }
-        return this.questionsService.bulkDeleteQuestions(ids);
-    }
+    // @Delete(':id')
+    // @HttpCode(HttpStatus.NO_CONTENT)
+    // @ApiOperation({ summary: 'Delete a question', description: 'Permanently deletes a question and all its related data (choices, wrong options, vitals, quality review, tags).' })
+    // async delete(@Param('id') id: string): Promise<void> {
+    //     return this.questionsService.deleteQuestion(id);
+    // }
 
     // ============================================
-    // NEW: Get statistics endpoint
+    // BULK DELETE: Bulk delete endpoint
+    // ============================================
+    // @Post('bulk-delete')
+    // @HttpCode(HttpStatus.NO_CONTENT)
+    // @ApiOperation({ summary: 'Bulk delete questions', description: 'Permanently deletes multiple questions by their IDs. Accepts an array of question IDs in the request body.' })
+    // async bulkDelete(@Body('ids') ids: string[]): Promise<void> {
+    //     if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    //         throw new BadRequestException('Please provide an array of question IDs');
+    //     }
+    //     return this.questionsService.bulkDeleteQuestions(ids);
+    // }
+
+    // ============================================
+    // STATS: Get statistics endpoint
     // ============================================
     @Get('stats/summary')
+    @ApiOperation({ summary: 'Question statistics', description: 'Returns aggregate statistics: total count, breakdown by difficulty, source type, source, system, discipline, and published vs unpublished counts.' })
     async getStats(): Promise<{
         total: number;
         byDifficulty: Record<string, number>;

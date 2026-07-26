@@ -155,9 +155,14 @@ export class FindAllQuestionsDto {
 // ============================================
 
 export class ReviewQuestionDto {
-    @ApiProperty({ description: 'Set true to approve the question (sets reviewed=true and published=true)' })
+    // @ApiProperty({ description: 'Set true to mark the question as reviewed' })
+    // @IsBoolean()
+    // reviewed!: boolean;
+
+    @ApiPropertyOptional({ description: 'Set true to reject the question. If approved, set to false.' })
+    @IsOptional()
     @IsBoolean()
-    reviewed!: boolean;
+    rejected?: boolean;
 
     @ApiPropertyOptional({ description: 'User ID of the reviewer (for audit trail)' })
     @IsOptional()
