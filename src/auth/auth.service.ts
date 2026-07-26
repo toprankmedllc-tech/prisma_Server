@@ -28,6 +28,14 @@ export class AuthService {
   );
     }
 
+    // Validate that terms and privacy are accepted
+    if (!dto.acceptedTerms) {
+      throw new BadRequestException('You must accept the terms and conditions');
+    }
+    if (!dto.acceptedPrivacy) {
+      throw new BadRequestException('You must accept the privacy policy');
+    }
+
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     const user = await this.prisma.user.create({
@@ -36,6 +44,11 @@ export class AuthService {
         passwordHash: hashedPassword,
         firstName: dto.firstName,
         lastName: dto.lastName,
+        studentType: dto.studentType,
+        targetExam: dto.targetExam,
+        targetTestDate: dto.targetTestDate ? new Date(dto.targetTestDate) : null,
+        acceptedTerms: dto.acceptedTerms,
+        acceptedPrivacy: dto.acceptedPrivacy,
         role: 'STUDENT',
         isActive: true,
       }
@@ -57,6 +70,9 @@ export class AuthService {
         passwordHash: true,
         firstName: true,
         lastName: true,
+        studentType: true,
+        targetExam: true,
+        targetTestDate: true,
         emailVerifiedAt: true,
         role: true,
       },
@@ -203,6 +219,9 @@ export class AuthService {
         emailVerifiedAt: true,
         firstName: true,
         lastName: true,
+        studentType: true,
+        targetExam: true,
+        targetTestDate: true,
       }
     });
     if (!user) {
@@ -214,7 +233,9 @@ export class AuthService {
       email: user.email,
       id: user.id,
       role: user.role,
-
+      studentType: user.studentType,
+      targetExam: user.targetExam,
+      targetTestDate: user.targetTestDate,
       emailVerifiedAt: user.emailVerifiedAt
     };
   }

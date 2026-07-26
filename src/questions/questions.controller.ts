@@ -16,7 +16,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { QuestionsService } from './questions.service';
 import { QuestionGenerationService } from './question-generation.service';
-import { GenerateQuestionsDto } from './dto/request.dto';
+import { GenerateQuestionsDto, ReviewQuestionDto, CreateQualityReviewDto, UnpublishByDisciplineDto } from './dto/request.dto';
 import { GenerateQuestionsResponseDto, QuestionResponseDto } from './dto/response.dto';
 import { ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
 
@@ -190,6 +190,39 @@ export class QuestionsController {
     @Patch(':id/publish')
     async publish(@Param('id') id: string): Promise<QuestionResponseDto> {
         return this.questionsService.publishQuestion(id);
+    }
+
+    // ============================================
+    // NEW: Review a question (approve or add notes)
+    // ============================================
+    @Patch(':id/review')
+    async review(
+        @Param('id') id: string,
+        @Body() dto: ReviewQuestionDto,
+    ): Promise<QuestionResponseDto> {
+        return this.questionsService.reviewQuestion(id, dto);
+    }
+
+    // ============================================
+    // NEW: Save / update quality review for a question
+    // ============================================
+    @Patch(':id/quality-review')
+    async saveQualityReview(
+        @Param('id') id: string,
+        @Body() dto: CreateQualityReviewDto,
+    ) {
+        return this.questionsService.saveQualityReview(id, dto);
+    }
+
+    // ============================================
+    // NEW: Unpublish all questions by discipline
+    // ============================================
+    @Post('unpublish-by-discipline')
+    @HttpCode(HttpStatus.OK)
+    async unpublishByDiscipline(
+        @Body() dto: UnpublishByDisciplineDto,
+    ): Promise<{ count: number }> {
+        return this.questionsService.unpublishByDiscipline(dto.discipline);
     }
 
     @Delete(':id')

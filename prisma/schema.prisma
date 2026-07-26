@@ -12,6 +12,12 @@ enum Role {
   ADMIN
 }
 
+enum StudentType {
+  MEDICAL_GRADUATE
+  GRADUATE
+  INTERMEDIATE_GRADUATE_IMG
+}
+
 enum ExamType {
   USMLE_STEP_1
   USMLE_STEP_2_CK
@@ -79,7 +85,11 @@ model User {
   firstName String?
   lastName  String?
 
+  studentType StudentType?
+
   targetExam ExamType?
+
+  targetTestDate DateTime?
 
   graduationYear Int?
 
@@ -88,6 +98,9 @@ model User {
   country String?
 
   timezone String?
+
+  acceptedTerms       Boolean @default(false)
+  acceptedPrivacy     Boolean @default(false)
 
   role Role @default(STUDENT)
 
@@ -213,6 +226,7 @@ model QualityReview {
   vignetteReview     String?
   buzzwordReview     String? // Only for buzzword questions
 
+  reviewedBy String?  // User ID of the quality reviewer
   reviewedAt DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -288,6 +302,9 @@ model Question {
   attempts QuestionAttempt[]
 
   isPublished Boolean @default(false)
+  reviewed    Boolean @default(false)
+  reviewedBy  String?     // User ID of the reviewer (audit trail)
+  reviewNotes Json?     // Flexible attribute-level review notes (e.g. { stem: "...", choices: { "choiceId": "..." }, explanation: "..." })
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

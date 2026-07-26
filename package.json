@@ -22,7 +22,8 @@
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:deploy": "npx prisma migrate deploy",
     "prisma:reset": "npx prisma migrate reset",
-    "prisma:studio": "npx prisma studio"
+    "prisma:studio": "npx prisma studio",
+    "ingest:markdown": "npx ts-node -r tsconfig-paths/register src/scripts/ingest-markdown.ts"
   },
   "dependencies": {
     "@chroma-core/default-embed": "^0.1.9",

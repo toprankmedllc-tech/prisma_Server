@@ -89,6 +89,44 @@ export class LLMService {
         }
     }
 
+    /**
+     * Generate a response using raw system + user prompts with full option control.
+     * Used by the RAG-based question generation for buzzword/vignette questions.
+     */
+    async generateWithPrompt(
+        systemPrompt: string,
+        userPrompt: string,
+        options?: { temperature?: number; maxTokens?: number; jsonMode?: boolean },
+    ): Promise<string> {
+        const messages: ChatMessage[] = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+        ];
+
+        this.logger.debug(`System prompt length: ${systemPrompt.length} chars`);
+        this.logger.debug(`User prompt length: ${userPrompt.length} chars`);
+        this.logger.debug(`JSON mode: ${options?.jsonMode || false}`);
+
+        try {
+            const response = await this.openRouter.chat(messages, {
+                temperature: options?.temperature ?? 0.7,
+                maxTokens: options?.maxTokens ?? 4096,
+                jsonMode: options?.jsonMode ?? false,
+            });
+
+            if (response.tokenUsage) {
+                this.logger.log(
+                    `Token usage - Prompt: ${response.tokenUsage.prompt}, Completion: ${response.tokenUsage.completion}, Total: ${response.tokenUsage.total}`,
+                );
+            }
+
+            return response.content;
+        } catch (error: any) {
+            this.logger.error(`generateWithPrompt failed: ${error.message}`);
+            throw new Error(`Prompt-based generation failed: ${error.message}`);
+        }
+    }
+
     async chat(messages: ChatMessage[], options?: { temperature?: number; maxTokens?: number }): Promise<string> {
         try {
             const response = await this.openRouter.chat(messages, {

@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Difficulty } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -8,24 +8,48 @@ export enum ExamType {
     USMLE_STEP_3 = 'USMLE_STEP_3',
 }
 
+export enum QuestionSourceType {
+    BUZZWORD = 'BUZZWORD',
+    VIGNETTE = 'VIGNETTE',
+}
+
 export class GenerateQuestionsDto {
-    @ApiProperty()
+    @ApiProperty({ description: 'Number of questions to generate (1-20)' })
+    @IsInt()
+    @Min(1)
+    @Max(20)
+    count!: number;
+
+    @ApiProperty({ description: 'Medical topic for the questions (e.g. "Narcolepsy", "Graves disease")' })
     @IsString()
     topic!: string;
 
-    @ApiProperty()
-    @IsEnum(Difficulty)
-    difficulty!: Difficulty;
+    @ApiPropertyOptional({ description: 'Subject area (e.g. "Clinical Medicine", "Pathology")' })
+    @IsOptional()
+    @IsString()
+    subject?: string;
 
-    @ApiProperty()
+    @ApiPropertyOptional({ description: 'Discipline (e.g. "Physiology", "Pharmacology", "Pathology")' })
+    @IsOptional()
+    @IsString()
+    discipline?: string;
+
+    @ApiProperty({ description: 'Question type: BUZZWORD (short, keyword-driven) or VIGNETTE (clinical scenario)' })
+    @IsEnum(QuestionSourceType)
+    sourceType!: QuestionSourceType;
+
+    @ApiProperty({ enum: ['USMLE_STEP_1', 'USMLE_STEP_2_CK', 'USMLE_STEP_3'] })
     @IsEnum(ExamType)
     examType!: ExamType;
 
-    @ApiProperty()
-    @IsInt()
-    @Min(1)
-    @Max(10)
-    count!: number;
+    @ApiProperty({ enum: ['EASY', 'MEDIUM', 'HARD'] })
+    @IsEnum(Difficulty)
+    difficulty!: Difficulty;
+
+    @ApiPropertyOptional({ description: 'Include a full clinical patient presentation (age, history, exam, vitals)' })
+    @IsOptional()
+    @IsBoolean()
+    clinicalRepresentation?: boolean;
 }
 
 
@@ -126,7 +150,87 @@ export class FindAllQuestionsDto {
     @IsString()
     sortOrder?: 'asc' | 'desc';
 }
-function Type(arg0: () => NumberConstructor): (target: FindAllQuestionsDto, propertyKey: "take") => void {
-    throw new Error('Function not implemented.');
+// ============================================
+// Review DTOs
+// ============================================
+
+export class ReviewQuestionDto {
+    @ApiProperty({ description: 'Set true to approve the question (sets reviewed=true and published=true)' })
+    @IsBoolean()
+    reviewed!: boolean;
+
+    @ApiPropertyOptional({ description: 'User ID of the reviewer (for audit trail)' })
+    @IsOptional()
+    @IsString()
+    reviewedBy?: string;
+
+    @ApiPropertyOptional({
+        description: 'Attribute-level review notes. Keys can be any question field (stem, leadInQuestion, explanation, choices, correctAnswer, medicalAccuracy, usmleStyle, explanationQuality, originality, grammar, vignetteReview, buzzwordReview, generalNotes, etc.)',
+        example: {
+            stem: 'The stem is well-written.',
+            choices: { 'choice-id-1': 'This distracter is too obvious.' },
+            explanation: 'Needs more detail about the mechanism.',
+            generalNotes: 'Overall good question, minor fixes needed.',
+        },
+    })
+    @IsOptional()
+    @IsObject()
+    reviewNotes?: Record<string, any>;
+}
+
+// ============================================
+// Quality Review DTO
+// ============================================
+
+export class CreateQualityReviewDto {
+    @ApiPropertyOptional({ description: 'Rating/feedback on medical accuracy' })
+    @IsOptional()
+    @IsString()
+    medicalAccuracy?: string;
+
+    @ApiPropertyOptional({ description: 'Rating/feedback on USMLE style alignment' })
+    @IsOptional()
+    @IsString()
+    usmleStyle?: string;
+
+    @ApiPropertyOptional({ description: 'Rating/feedback on explanation quality' })
+    @IsOptional()
+    @IsString()
+    explanationQuality?: string;
+
+    @ApiPropertyOptional({ description: 'Rating/feedback on originality' })
+    @IsOptional()
+    @IsString()
+    originality?: string;
+
+    @ApiPropertyOptional({ description: 'Rating/feedback on grammar' })
+    @IsOptional()
+    @IsString()
+    grammar?: string;
+
+    @ApiPropertyOptional({ description: 'Rating/feedback on vignette (for vignette-type questions)' })
+    @IsOptional()
+    @IsString()
+    vignetteReview?: string;
+
+    @ApiPropertyOptional({ description: 'Rating/feedback on buzzword usage (for buzzword-type questions)' })
+    @IsOptional()
+    @IsString()
+    buzzwordReview?: string;
+
+    @ApiPropertyOptional({ description: 'User ID of the quality reviewer (for audit trail)' })
+    @IsOptional()
+    @IsString()
+    reviewedBy?: string;
+}
+
+// ============================================
+// Unpublish by Discipline DTO
+// ============================================
+
+export class UnpublishByDisciplineDto {
+    @ApiProperty({ description: 'Discipline name to unpublish all questions for (e.g. Cardiology, Neurology)' })
+    @IsString()
+    discipline!: string;
 }
 

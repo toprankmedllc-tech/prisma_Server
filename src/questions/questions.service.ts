@@ -122,7 +122,7 @@ export class QuestionsService {
                         suggestedImages: questionData.suggestedImages || null,
 
                         // Is Published
-                        isPublished: true,
+                        isPublished: false,  // Imported questions start as unpublished and need basic review first
 
                         // Relations
                         choices: {
@@ -698,5 +698,135 @@ export class QuestionsService {
         await this.prisma.question.delete({
             where: { id },
         });
+    }
+
+    // ============================================
+    // NEW: Review a question (approve or add notes)
+    // ============================================
+    async reviewQuestion(
+        id: string,
+        dto: { reviewed: boolean; reviewedBy?: string; reviewNotes?: Record<string, any> },
+    ): Promise<QuestionResponseDto> {
+        const question = await this.prisma.question.findUnique({
+            where: { id },
+        });
+
+        if (!question) {
+            throw new NotFoundException(`Question with ID "${id}" not found`);
+        }
+
+        // Basic review: sets reviewed=true, stores reviewNotes and reviewedBy
+        // Does NOT publish the question yet - that happens after quality review
+        const updatedQuestion = await this.prisma.question.update({
+            where: { id },
+            data: {
+                reviewed: dto.reviewed,
+                ...(dto.reviewNotes !== undefined
+                    ? { reviewNotes: dto.reviewNotes }
+                    : {}),
+                ...(dto.reviewedBy !== undefined
+                    ? { reviewedBy: dto.reviewedBy }
+                    : {}),
+            },
+            include: {
+                choices: {
+                    orderBy: { order: 'asc' },
+                },
+                tags: {
+                    include: {
+                        tag: true,
+                    },
+                },
+                topic: true,
+            },
+        });
+
+        return {
+            id: updatedQuestion.id,
+            stem: updatedQuestion.stem,
+            explanation: updatedQuestion.explanation,
+            difficulty: updatedQuestion.difficulty,
+            source: updatedQuestion.source,
+            topicId: updatedQuestion.topicId,
+            choices: updatedQuestion.choices.map((c) => ({
+                id: c.id,
+                text: c.text,
+                isCorrect: c.isCorrect,
+                order: c.order,
+            })),
+            tags: updatedQuestion.tags.map((qt) => qt.tag.name),
+            isPublished: updatedQuestion.isPublished,
+            createdAt: updatedQuestion.createdAt,
+        };
+    }
+
+    // ============================================
+    // NEW: Save / update quality review for a question
+    // ============================================
+    async saveQualityReview(
+        questionId: string,
+        dto: {
+            medicalAccuracy?: string;
+            usmleStyle?: string;
+            explanationQuality?: string;
+            originality?: string;
+            grammar?: string;
+            vignetteReview?: string;
+            buzzwordReview?: string;
+            reviewedBy?: string;
+        },
+    ) {
+        const question = await this.prisma.question.findUnique({
+            where: { id: questionId },
+        });
+
+        if (!question) {
+            throw new NotFoundException(`Question with ID "${questionId}" not found`);
+        }
+
+        const qualityReview = await this.prisma.qualityReview.upsert({
+            where: { questionId },
+            create: {
+                questionId,
+                ...dto,
+            },
+            update: {
+                ...dto,
+                reviewedAt: new Date(),
+            },
+        });
+
+        // After quality review is complete, publish the question
+        await this.prisma.question.update({
+            where: { id: questionId },
+            data: {
+                isPublished: true,
+                reviewed: true,
+            },
+        });
+
+        return qualityReview;
+    }
+
+    // ============================================
+    // NEW: Unpublish all questions by discipline
+    // ============================================
+    async unpublishByDiscipline(discipline: string): Promise<{ count: number }> {
+        const result = await this.prisma.question.updateMany({
+            where: {
+                discipline: {
+                    equals: discipline,
+                    mode: 'insensitive',
+                },
+                isPublished: true,
+            },
+            data: {
+                isPublished: false,
+                reviewed: false,
+            },
+        });
+
+        this.logger.log(`Unpublished ${result.count} questions for discipline: ${discipline}`);
+        return { count: result.count };
     }
 }
