@@ -1,0 +1,507 @@
+[
+  {
+    "stem": "A child has episodes of sleepwalking and screaming during sleep but does not remember the events the next morning. These episodes most likely occur during:\n",
+    "leadInQuestion": null,
+    "explanation": "NREM stage 3 is the deepest stage of sleep and is characterized by delta waves. Parasomnias such as sleepwalking and night terrors commonly occur during this stage, and patients typically do not remember the episodes afterwar",
+    "source": "HUMAN_GENERATED",
+    "sourceType": "BUZZWORD",
+    "sourceRow": 2,
+    "sourceFile": "buzz.xlsx",
+    "topicName": "NREM stage 3 sleep",
+    "system": "Behavioral Health & Nervous Systems/Special Senses",
+    "discipline": "Physiology",
+    "cognitiveLevel": "Recall",
+    "difficulty": "MEDIUM",
+    "trapType": "Buzzword Trap",
+    "patientProfile": null,
+    "chiefComplaint": null,
+    "keySymptoms": [],
+    "vitals": null,
+    "labs": [],
+    "imaging": [],
+    "physicalExam": null,
+    "mainClue": null,
+    "supportingClue": null,
+    "correctAnswerLetter": "D",
+    "correctAnswerText": "D. NREM stage 3",
+    "choices": [
+      {
+        "letter": "A",
+        "text": "REM sleep",
+        "isCorrect": false,
+        "order": 0
+      },
+      {
+        "letter": "B",
+        "text": "NREM stage 1",
+        "isCorrect": false,
+        "order": 1
+      },
+      {
+        "letter": "C",
+        "text": "NREM stage 2",
+        "isCorrect": false,
+        "order": 2
+      },
+      {
+        "letter": "D",
+        "text": "NREM stage 3",
+        "isCorrect": true,
+        "order": 3
+      }
+    ],
+    "stepByStepReasoning": null,
+    "educationalObjective": null,
+    "wrongOptions": [
+      {
+        "letter": "A",
+        "text": "A. REM sleep",
+        "explanation": "REM sleep is associated with vivid dreaming, muscle atonia, and rapid eye movements. Sleepwalking and night terrors occur during NREM stage 3, not REM sleep",
+        "buzzwordCombo": "Dreaming + muscle atonia + rapid eye movements = REM sleep"
+      },
+      {
+        "letter": "B",
+        "text": "B. NREM stage 1",
+        "explanation": "NREM stage 1 is the lightest stage of sleep and is associated with theta waves and transition from wakefulness to sleep. Parasomnias such as sleepwalking and night terrors are not characteristic of this stage",
+        "buzzwordCombo": "Theta waves + light sleep + sleep onset = NREM stage 1"
+      },
+      {
+        "letter": "C",
+        "text": "C. NREM stage 2",
+        "explanation": "NREM stage 2 is characterized by sleep spindles and K complexes and represents the largest portion of total sleep time. Sleepwalking and night terrors are instead associated with NREM stage 3 slee",
+        "buzzwordCombo": "Sleep spindles + K complexes + most total sleep = NREM stage 2"
+      }
+    ],
+    "buzzwords": [
+      "Sleepwalking",
+      "Screaming during sleep",
+      "No memory of events"
+    ],
+    "buzzwordCombinationCorrect": "Delta waves + sleepwalking + night terrors = NREM stage 3",
+    "tags": [
+      "NREM stage 3 sleep",
+      "Behavioral Health & Nervous Systems/Special Senses",
+      "Physiology",
+      "Sleepwalking",
+      "Screaming during sleep",
+      "No memory of events",
+      "Neuro Physio",
+      "REM sleep",
+      "Parasomnias",
+      "Delta waves"
+    ],
+    "relatedConcepts": [
+      "REM sleep",
+      "Parasomnias",
+      "Delta waves"
+    ],
+    "qualityReviews": null,
+    "suggestedImages": null,
+    "importedAt": "2026-07-02T18:34:49.091Z",
+    "importedBy": "excel_import_script"
+  },
+  {
+    "stem": "A patient undergoes polysomnography demonstrating sleep spindles and K complexes. Which stage of sleep is represented?",
+    "leadInQuestion": null,
+    "explanation": "NREM stage 2 sleep is classically identified by the presence of sleep spindles and K complexes on EEG. It represents the largest proportion of total sleep time in adults",
+    "source": "HUMAN_GENERATED",
+    "sourceType": "BUZZWORD",
+    "sourceRow": 3,
+    "sourceFile": "buzz.xlsx",
+    "topicName": "NREM Stage 2 Sleep",
+    "system": "Behavioral Health & Nervous Systems/Special Senses",
+    "discipline": "Physiology",
+    "cognitiveLevel": "Recall",
+    "difficulty": "MEDIUM",
+    "trapType": "Similar Diagnosis Confusion",
+    "patientProfile": null,
+    "chiefComplaint": null,
+    "keySymptoms": [],
+    "vitals": null,
+    "labs": [],
+    "imaging": [],
+    "physicalExam": null,
+    "mainClue": null,
+    "supportingClue": null,
+    "correctAnswerLetter": "C",
+    "correctAnswerText": "C. NREM stage 2",
+    "choices": [
+      {
+        "letter": "A",
+        "text": "REM sleep",
+        "isCorrect": false,
+        "order": 0
+      },
+      {
+        "letter": "B",
+        "text": "NREM stage 1",
+        "isCorrect": false,
+        "order": 1
+      },
+      {
+        "letter": "C",
+        "text": "NREM stage 2",
+        "isCorrect": true,
+        "order": 2
+      },
+      {
+        "letter": "D",
+        "text": "NREM stage 3",
+        "isCorrect": false,
+        "order": 3
+      }
+    ],
+    "stepByStepReasoning": null,
+    "educationalObjective": null,
+    "wrongOptions": [
+      {
+        "letter": "A",
+        "text": "A. REM sleep",
+        "explanation": "REM sleep is characterized by vivid dreaming, rapid eye movements, and muscle atonia. Sleep spindles and K complexes are not seen during REM sleep.",
+        "buzzwordCombo": "Dreaming + rapid eye movements + muscle atonia = REM sleep"
+      },
+      {
+        "letter": "B",
+        "text": "B. NREM stage 1",
+        "explanation": "NREM stage 1 is the lightest stage of sleep and is associated with theta waves and transition from wakefulness to sleep. Sleep spindles and K complexes are characteristic of NREM stage 2, not stage 1.",
+        "buzzwordCombo": "Theta waves + lightest sleep + sleep onset = NREM stage 1"
+      },
+      {
+        "letter": "C",
+        "text": "D. NREM stage 3",
+        "explanation": "NREM stage 3 is deep slow-wave sleep characterized by delta waves. It is associated with parasomnias such as sleepwalking and night terrors rather than sleep spindles and K complexes.",
+        "buzzwordCombo": "Delta waves + deep slow-wave sleep + parasomnias = NREM stage 3"
+      }
+    ],
+    "buzzwords": [
+      "Polysomnography",
+      "Sleep spindles",
+      "K complexes"
+    ],
+    "buzzwordCombinationCorrect": "Sleep spindles + K complexes + largest proportion of sleep = NREM stage 2",
+    "tags": [
+      "NREM Stage 2 Sleep",
+      "Behavioral Health & Nervous Systems/Special Senses",
+      "Physiology",
+      "Polysomnography",
+      "Sleep spindles",
+      "K complexes",
+      "Neuro physio",
+      "EEG sleep stages"
+    ],
+    "relatedConcepts": [
+      "Sleep spindles",
+      "K complexes",
+      "EEG sleep stages"
+    ],
+    "qualityReviews": null,
+    "suggestedImages": null,
+    "importedAt": "2026-07-02T18:34:49.091Z",
+    "importedBy": "excel_import_script"
+  },
+  {
+    "stem": "A patient with cocaine use disorder experiences intense euphoria due to increased dopamine release in the nucleus accumbens. The dopaminergic neurons responsible for this reward pathway primarily originate from which brain structure?\n\nA. Substantia nigra pars compacta\nB. Ventral tegmental area\nC. Mammillary bodies\nD. Suprachiasmatic nucleus",
+    "leadInQuestion": null,
+    "explanation": "The Ventral Tegmental Area is the origin of the mesolimbic dopaminergic pathway, which projects to the nucleus accumbens and mediates reward, pleasure, and addiction. Drugs such as cocaine increase dopamine signaling in this pathway, producing euphoria.",
+    "source": "HUMAN_GENERATED",
+    "sourceType": "BUZZWORD",
+    "sourceRow": 4,
+    "sourceFile": "buzz.xlsx",
+    "topicName": "Ventral Tegmental Area",
+    "system": "Behavioral Health & Nervous Systems/Special Senses",
+    "discipline": "Physiology",
+    "cognitiveLevel": "Application",
+    "difficulty": "MEDIUM",
+    "trapType": "Similar Diagnosis Confusion",
+    "patientProfile": null,
+    "chiefComplaint": null,
+    "keySymptoms": [],
+    "vitals": null,
+    "labs": [],
+    "imaging": [],
+    "physicalExam": null,
+    "mainClue": null,
+    "supportingClue": null,
+    "correctAnswerLetter": "B",
+    "correctAnswerText": "B. Ventral tegmental area",
+    "choices": [
+      {
+        "letter": "A",
+        "text": "Substantia nigra pars compacta",
+        "isCorrect": false,
+        "order": 0
+      },
+      {
+        "letter": "B",
+        "text": "Ventral tegmental area",
+        "isCorrect": true,
+        "order": 1
+      },
+      {
+        "letter": "C",
+        "text": "Mammillary bodies",
+        "isCorrect": false,
+        "order": 2
+      },
+      {
+        "letter": "D",
+        "text": "Suprachiasmatic nucleus",
+        "isCorrect": false,
+        "order": 3
+      }
+    ],
+    "stepByStepReasoning": null,
+    "educationalObjective": null,
+    "wrongOptions": [
+      {
+        "letter": "A",
+        "text": "A. Substantia nigra pars compacta",
+        "explanation": "The substantia nigra pars compacta is part of the nigrostriatal pathway involved in movement regulation. Degeneration here is associated with Parkinson Disease.",
+        "buzzwordCombo": "Resting tremor + rigidity + bradykinesia = Substantia nigra"
+      },
+      {
+        "letter": "B",
+        "text": "C. Mammillary bodies",
+        "explanation": "The mammillary bodies are involved in memory processing and are classically damaged in Wernicke-Korsakoff Syndrome due to thiamine deficiency.",
+        "buzzwordCombo": "Confabulation + alcoholism + memory loss = Mammillary bodies"
+      },
+      {
+        "letter": "C",
+        "text": "D. Suprachiasmatic nucleus",
+        "explanation": "The suprachiasmatic nucleus regulates circadian rhythm and sleep-wake cycles. It is not part of the dopaminergic reward system.",
+        "buzzwordCombo": "Circadian rhythm + sleep cycle + hypothalamus = Suprachiasmatic nucleus"
+      }
+    ],
+    "buzzwords": [
+      "Cocaine use",
+      "Euphoria",
+      "Dopamine release",
+      "Nucleus accumbens",
+      "Reward pathway",
+      "Addiction"
+    ],
+    "buzzwordCombinationCorrect": "Cocaine + nucleus accumbens + reward pathway = Ventral tegmental area",
+    "tags": [
+      "Ventral Tegmental Area",
+      "Behavioral Health & Nervous Systems/Special Senses",
+      "Physiology",
+      "Cocaine use",
+      "Euphoria",
+      "Dopamine release",
+      "Nucleus accumbens",
+      "Reward pathway",
+      "Addiction",
+      "NEURO PHYSIO",
+      "Mesolimbic pathway",
+      "Substantia nigra"
+    ],
+    "relatedConcepts": [
+      "Mesolimbic pathway",
+      "Nucleus accumbens",
+      "Substantia nigra"
+    ],
+    "qualityReviews": null,
+    "suggestedImages": null,
+    "importedAt": "2026-07-02T18:34:49.091Z",
+    "importedBy": "excel_import_script"
+  },
+  {
+    "stem": "A patient using amphetamines reports intense pleasure, increased motivation, and craving behavior due to increased dopamine activity in a pathway projecting to the nucleus accumbens. Which of the following is the primary function of this dopaminergic pathway?\n\nA. Motivation and reward\nB. Motor control\nC. Prolactin inhibition\nD. Regulation of circadian rhythm",
+    "leadInQuestion": null,
+    "explanation": "The Mesolimbic Pathway is responsible for reward, motivation, pleasure, and addiction-related behaviors. Increased dopamine activity in this pathway produces euphoria and reinforcement seen with substance use.",
+    "source": "HUMAN_GENERATED",
+    "sourceType": "BUZZWORD",
+    "sourceRow": 5,
+    "sourceFile": "buzz.xlsx",
+    "topicName": "Mesolimbic Pathway function in motivation and reward",
+    "system": "Behavioral Health & Nervous Systems/Special Senses",
+    "discipline": "Physiology",
+    "cognitiveLevel": "Application",
+    "difficulty": "MEDIUM",
+    "trapType": "Buzzword Trap",
+    "patientProfile": null,
+    "chiefComplaint": null,
+    "keySymptoms": [],
+    "vitals": null,
+    "labs": [],
+    "imaging": [],
+    "physicalExam": null,
+    "mainClue": null,
+    "supportingClue": null,
+    "correctAnswerLetter": "A",
+    "correctAnswerText": "A. Motivation and reward",
+    "choices": [
+      {
+        "letter": "A",
+        "text": "Motivation and reward",
+        "isCorrect": true,
+        "order": 0
+      },
+      {
+        "letter": "B",
+        "text": "Motor control",
+        "isCorrect": false,
+        "order": 1
+      },
+      {
+        "letter": "C",
+        "text": "Prolactin inhibition",
+        "isCorrect": false,
+        "order": 2
+      },
+      {
+        "letter": "D",
+        "text": "Regulation of circadian rhythm",
+        "isCorrect": false,
+        "order": 3
+      }
+    ],
+    "stepByStepReasoning": null,
+    "educationalObjective": null,
+    "wrongOptions": [
+      {
+        "letter": "A",
+        "text": "B. Motor control",
+        "explanation": "Motor control is primarily mediated by the nigrostriatal dopaminergic pathway. Dysfunction here causes extrapyramidal symptoms and parkinsonism.",
+        "buzzwordCombo": "Rigidity + tremor + bradykinesia = Motor control"
+      },
+      {
+        "letter": "B",
+        "text": "C. Prolactin inhibition",
+        "explanation": "Prolactin inhibition is mediated by the tuberoinfundibular pathway, where dopamine suppresses prolactin release from the anterior pituitary.",
+        "buzzwordCombo": "Galactorrhea + amenorrhea + hyperprolactinemia = Prolactin inhibition"
+      },
+      {
+        "letter": "C",
+        "text": "D. Regulation of circadian rhythm",
+        "explanation": "Circadian rhythm regulation is controlled primarily by the suprachiasmatic nucleus of the hypothalamus and is not the main function of the mesolimbic dopamine pathway.",
+        "buzzwordCombo": "Sleep-wake cycle + light exposure + hypothalamus = Circadian rhythm regulation"
+      }
+    ],
+    "buzzwords": [
+      "Amphetamines",
+      "Dopamine",
+      "Nucleus accumbens",
+      "Pleasure",
+      "Addiction",
+      "Craving",
+      "Reward pathway"
+    ],
+    "buzzwordCombinationCorrect": "Nucleus accumbens + dopamine + addiction = Motivation and reward",
+    "tags": [
+      "Mesolimbic Pathway function in motivation and reward",
+      "Behavioral Health & Nervous Systems/Special Senses",
+      "Physiology",
+      "Amphetamines",
+      "Dopamine",
+      "Nucleus accumbens",
+      "Pleasure",
+      "Addiction",
+      "Craving",
+      "Reward pathway",
+      "NEURO PHYSIO",
+      "Nigrostriatal pathway",
+      "Tuberoinfundibular pathway",
+      "Substance use disorders"
+    ],
+    "relatedConcepts": [
+      "Nigrostriatal pathway",
+      "Tuberoinfundibular pathway",
+      "Substance use disorders"
+    ],
+    "qualityReviews": null,
+    "suggestedImages": null,
+    "importedAt": "2026-07-02T18:34:49.091Z",
+    "importedBy": "excel_import_script"
+  },
+  {
+    "stem": "A 45-year-old woman undergoes ligation of her left ovarian vessels during a gynecologic procedure for endometriosis. Postoperatively, she develops flank pain and imaging reveals hydronephrosis. Which anatomical relationship most likely explains the iatrogenic injury?",
+    "leadInQuestion": null,
+    "explanation": "The ureter travels under the gonadal arteries, then over the common iliac artery, then under the uterine artery/vas deferens (retroperitoneal). Gynecologic procedures risk ureteral injury → obstruction or leak.\nB. Under gonadal → over iliac → under uterine artery\nCorrect — “Water over the iliacs and under the bridge.”",
+    "source": "HUMAN_GENERATED",
+    "sourceType": "BUZZWORD",
+    "sourceRow": 6,
+    "sourceFile": "buzz.xlsx",
+    "topicName": "Renal anatomy",
+    "system": "Renal/Urinary System",
+    "discipline": "Gross Anatomy & Embryology",
+    "cognitiveLevel": "Recall",
+    "difficulty": "MEDIUM",
+    "trapType": "Buzzword Trap",
+    "patientProfile": null,
+    "chiefComplaint": null,
+    "keySymptoms": [],
+    "vitals": null,
+    "labs": [],
+    "imaging": [],
+    "physicalExam": null,
+    "mainClue": null,
+    "supportingClue": null,
+    "correctAnswerLetter": "O",
+    "correctAnswerText": "Option B -The ureter travels under the gonadal arteries, then over the common iliac artery, then under the uterine artery/vas deferens (retroperitoneal). Gynecologic procedures risk ureteral injury → obstruction or leak.",
+    "choices": [
+      {
+        "letter": "A",
+        "text": "The ureter passes over the gonadal artery then under the common iliac artery",
+        "isCorrect": false,
+        "order": 0
+      },
+      {
+        "letter": "B",
+        "text": "The ureter passes under the gonadal artery then over the common iliac artery",
+        "isCorrect": false,
+        "order": 1
+      },
+      {
+        "letter": "C",
+        "text": "The ureter passes lateral to the uterine artery at the level of the cervix",
+        "isCorrect": false,
+        "order": 2
+      },
+      {
+        "letter": "D",
+        "text": "The ureter travels within the broad ligament alongside the uterine vessels",
+        "isCorrect": false,
+        "order": 3
+      }
+    ],
+    "stepByStepReasoning": null,
+    "educationalObjective": null,
+    "wrongOptions": [
+      {
+        "letter": "A",
+        "text": "Option A Over gonadal, under iliac",
+        "explanation": "\nIncorrect — The ureter passes under the gonadal artery, not over.",
+        "buzzwordCombo": "NA"
+      },
+      {
+        "letter": "B",
+        "text": "Option C-Lateral to uterine artery",
+        "explanation": "Incorrect — The ureter passes under the uterine artery medially, making it vulnerable in hysterectomy.",
+        "buzzwordCombo": "NA"
+      },
+      {
+        "letter": "C",
+        "text": "Option D writhing Broad ligament",
+        "explanation": "Incorrect — The ureter is retroperitoneal and runs near but not within the broad ligament vasculature.",
+        "buzzwordCombo": "NA"
+      }
+    ],
+    "buzzwords": [
+      "Water (ureters) flows over the iliacs and under\nthe bridge (uterine artery or vas deferens)."
+    ],
+    "buzzwordCombinationCorrect": "Gynaecological procedure+Flank plain+ hydronephrosis = ureter injury",
+    "tags": [
+      "Renal anatomy",
+      "Renal/Urinary System",
+      "Gross Anatomy & Embryology",
+      "Water (ureters) flows over the iliacs and under\nthe bridge (uterine artery or vas deferens).",
+      "Renal  anatomy"
+    ],
+    "relatedConcepts": [],
+    "qualityReviews": null,
+    "suggestedImages": null,
+    "importedAt": "2026-07-02T18:34:49.091Z",
+    "importedBy": "excel_import_script"
+  }
+]

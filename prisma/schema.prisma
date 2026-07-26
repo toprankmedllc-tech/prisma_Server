@@ -1,0 +1,517 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+enum ExamType {
+  USMLE_STEP_1
+  USMLE_STEP_2_CK
+  USMLE_STEP_3
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionSource {
+  MANUAL
+  AI_GENERATED
+  IMPORTED
+  HUMAN_GENERATED
+}
+
+enum QuestionStatus {
+  DRAFT
+  REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum DocumentStatus {
+  UPLOADED
+  VALIDATING
+  PROCESSING
+  CHUNKED
+  EMBEDDING
+  INDEXED
+  READY
+  FAILED
+  RETRYING
+  ARCHIVED
+}
+
+enum MessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum QuestionSourceType {
+  BUZZWORD
+  VIGNETTE
+}
+
+enum CognitiveLevel {
+  RECALL
+  APPLICATION
+  CLINICAL_REASONING
+  ANALYSIS
+}
+
+model User {
+  id String @id @default(cuid())
+
+  email        String @unique
+  passwordHash String
+
+  firstName String?
+  lastName  String?
+
+  targetExam ExamType?
+
+  graduationYear Int?
+
+  university String?
+
+  country String?
+
+  timezone String?
+
+  role Role @default(STUDENT)
+
+  isActive Boolean @default(true)
+
+  emailVerifiedAt DateTime?
+
+  sessions Session[]
+
+  attempts QuestionAttempt[]
+
+  examAttempts ExamAttempt[]
+
+  conversations Conversation[]
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  flashcards        Flashcard[]
+  questionResponses QuestionResponse[]
+  userStats         UserStats?
+
+  @@map("users")
+}
+
+model Session {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  refreshToken String
+
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// ENHANCED QUESTION MODELS
+// ============================================
+
+model Tag {
+  id String @id @default(cuid())
+
+  name String @unique
+
+  questions QuestionTag[]
+}
+
+model QuestionTag {
+  questionId String
+  tagId      String
+
+  question Question @relation(fields: [questionId], references: [id])
+  tag      Tag      @relation(fields: [tagId], references: [id])
+
+  @@id([questionId, tagId])
+}
+
+model Choice {
+  id String @id @default(cuid())
+
+  questionId String
+
+  question Question @relation(fields: [questionId], references: [id])
+
+  text String
+
+  letter String? // A, B, C, D, E
+
+  isCorrect Boolean
+
+  order Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WrongOption {
+  id String @id @default(cuid())
+
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+
+  letter        String // A, B, C, D
+  text          String
+  explanation   String?
+  buzzwordCombo String? // Only for buzzword questions
+
+  order Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Vitals {
+  id String @id @default(cuid())
+
+  questionId String   @unique
+  question   Question @relation(fields: [questionId], references: [id])
+
+  bloodPressure   String?
+  heartRate       Int?
+  pulseOximetry   Int?
+  temperature     Float?
+  respiratoryRate Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model QualityReview {
+  id String @id @default(cuid())
+
+  questionId String   @unique
+  question   Question @relation(fields: [questionId], references: [id])
+
+  medicalAccuracy    String?
+  usmleStyle         String?
+  explanationQuality String?
+  originality        String?
+  grammar            String?
+  vignetteReview     String?
+  buzzwordReview     String? // Only for buzzword questions
+
+  reviewedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Question {
+  id String @id @default(cuid())
+
+  // === BASIC INFORMATION ===
+  stem           String
+  leadInQuestion String?
+  explanation    String
+
+  // === SOURCE & METADATA ===
+  source     QuestionSource      @default(HUMAN_GENERATED)
+  sourceType QuestionSourceType?
+  sourceRow  Int?
+  sourceFile String?
+  qid        String?
+
+  // === MEDICAL CLASSIFICATION ===
+  topicId String
+  topic   Topic  @relation(fields: [topicId], references: [id])
+
+  system         String?
+  discipline     String?
+  subsystem      String?
+  cognitiveLevel CognitiveLevel?
+  difficulty     Difficulty
+  trapType       String?
+
+  // === CLINICAL PRESENTATION ===
+  patientProfile String?
+  chiefComplaint String?
+  keySymptoms    String[] @default([])
+  physicalExam   String?
+
+  // === DIAGNOSTIC CLUES ===
+  mainClue       String?
+  supportingClue String?
+
+  // === ANSWER ===
+  correctAnswerLetter String? // A, B, C, D, E
+  correctAnswerText   String?
+
+  // === DETAILED EXPLANATIONS ===
+  stepByStepReasoning  String?
+  educationalObjective String?
+
+  // === BUZZWORD SPECIFIC ===
+  buzzwords                  String[] @default([])
+  buzzwordCombinationCorrect String?
+
+  // === TAGS & CONCEPTS ===
+  relatedConcepts String[] @default([])
+
+  // === IMAGES ===
+  suggestedImages String?
+
+  // === TIMESTAMPS ===
+  importedAt DateTime?
+  importedBy String?
+
+  // === RELATIONSHIPS ===
+  choices       Choice[]
+  wrongOptions  WrongOption[]
+  vitals        Vitals?
+  qualityReview QualityReview?
+
+  references QuestionReference[]
+
+  tags QuestionTag[]
+
+  attempts QuestionAttempt[]
+
+  isPublished Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  examQuestions ExamQuestion[]
+
+  questionResponses QuestionResponse[]
+}
+
+model QuestionAttempt {
+  id String @id @default(cuid())
+
+  userId     String
+  questionId String
+
+  selectedChoiceId String?
+
+  isCorrect Boolean
+
+  timeSpentSec Int
+
+  user User @relation(fields: [userId], references: [id])
+
+  question Question @relation(fields: [questionId], references: [id])
+
+  attemptedAt DateTime @default(now())
+}
+
+model QuestionReference {
+  questionId  String
+  referenceId String
+
+  question Question @relation(fields: [questionId], references: [id])
+
+  reference Reference @relation(fields: [referenceId], references: [id])
+
+  @@id([questionId, referenceId])
+}
+
+model Reference {
+  id String @id @default(cuid())
+
+  title String
+
+  source String
+
+  url String?
+
+  questions QuestionReference[]
+}
+
+model UserStats {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id])
+  totalQuestions Int      @default(0)
+  correctAnswers Int      @default(0)
+  accuracy       Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model QuestionResponse {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  questionId   String
+  isCorrect    Boolean
+  responseTime Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  question Question? @relation(fields: [questionId], references: [id])
+}
+
+model Document {
+  id String @id @default(cuid())
+
+  title String
+
+  source String?
+
+  status DocumentStatus
+
+  chunks DocumentChunk[]
+
+  createdAt DateTime @default(now())
+}
+
+model DocumentChunk {
+  id String @id @default(cuid())
+
+  documentId String
+
+  document Document @relation(fields: [documentId], references: [id])
+
+  chunkIndex Int
+
+  content String
+
+  vectorId String?
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+}
+
+model ExamAttempt {
+  id String @id @default(cuid())
+
+  examId String
+
+  userId String
+
+  score Float
+
+  startedAt DateTime
+
+  completedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  exam Exam @relation(fields: [examId], references: [id])
+}
+
+model ExamQuestion {
+  examId     String
+  questionId String
+
+  exam Exam @relation(fields: [examId], references: [id])
+
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@id([examId, questionId])
+}
+
+model Exam {
+  id String @id @default(cuid())
+
+  title String
+
+  durationMin Int
+
+  questions ExamQuestion[]
+
+  createdAt DateTime @default(now())
+
+  examAttempts ExamAttempt[]
+}
+
+model Flashcard {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  front String
+
+  back String
+
+  nextReview DateTime?
+
+  easeFactor Float?
+
+  interval Int?
+}
+
+model Subject {
+  id String @id @default(cuid())
+
+  name String @unique
+
+  description String?
+
+  topics Topic[]
+
+  createdAt DateTime @default(now())
+}
+
+model Topic {
+  id String @id @default(cuid())
+
+  name String
+
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  parentId String?
+
+  parent Topic? @relation("TopicHierarchy", fields: [parentId], references: [id])
+
+  children Topic[] @relation("TopicHierarchy")
+
+  questions Question[]
+
+  createdAt DateTime @default(now())
+}
+
+model Conversation {
+  id String @id @default(cuid())
+
+  userId String
+
+  title String?
+
+  user User @relation(fields: [userId], references: [id])
+
+  messages Message[]
+
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id String @id @default(cuid())
+
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  role MessageRole
+
+  content String
+
+  tokenCount Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId])
+}
