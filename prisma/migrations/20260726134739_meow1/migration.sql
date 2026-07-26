@@ -1,10 +1,8 @@
-[2mLoaded Prisma config from prisma.config.ts.
-[22m
--- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
-
 -- CreateEnum
 CREATE TYPE "Role" AS ENUM ('STUDENT', 'ADMIN');
+
+-- CreateEnum
+CREATE TYPE "StudentType" AS ENUM ('MEDICAL_GRADUATE', 'GRADUATE', 'INTERMEDIATE_GRADUATE_IMG');
 
 -- CreateEnum
 CREATE TYPE "ExamType" AS ENUM ('USMLE_STEP_1', 'USMLE_STEP_2_CK', 'USMLE_STEP_3');
@@ -37,11 +35,15 @@ CREATE TABLE "users" (
     "passwordHash" TEXT NOT NULL,
     "firstName" TEXT,
     "lastName" TEXT,
+    "studentType" "StudentType",
     "targetExam" "ExamType",
+    "targetTestDate" TIMESTAMP(3),
     "graduationYear" INTEGER,
     "university" TEXT,
     "country" TEXT,
     "timezone" TEXT,
+    "acceptedTerms" BOOLEAN NOT NULL DEFAULT false,
+    "acceptedPrivacy" BOOLEAN NOT NULL DEFAULT false,
     "role" "Role" NOT NULL DEFAULT 'STUDENT',
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "emailVerifiedAt" TIMESTAMP(3),
@@ -133,6 +135,7 @@ CREATE TABLE "QualityReview" (
     "grammar" TEXT,
     "vignetteReview" TEXT,
     "buzzwordReview" TEXT,
+    "reviewedBy" TEXT,
     "reviewedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -175,6 +178,7 @@ CREATE TABLE "Question" (
     "importedBy" TEXT,
     "isPublished" BOOLEAN NOT NULL DEFAULT false,
     "reviewed" BOOLEAN NOT NULL DEFAULT false,
+    "reviewedBy" TEXT,
     "reviewNotes" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -443,4 +447,3 @@ ALTER TABLE "Conversation" ADD CONSTRAINT "Conversation_userId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "Message" ADD CONSTRAINT "Message_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-

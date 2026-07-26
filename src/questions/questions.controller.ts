@@ -9,16 +9,13 @@ import {
     Body,
     HttpCode,
     HttpStatus,
-    UploadedFile,
-    UseInterceptors,
     BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { QuestionsService } from './questions.service';
 import { QuestionGenerationService } from './question-generation.service';
 import { GenerateQuestionsDto, ReviewQuestionDto, CreateQualityReviewDto, UnpublishByDisciplineDto } from './dto/request.dto';
 import { GenerateQuestionsResponseDto, QuestionResponseDto } from './dto/response.dto';
-import { ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { ApiQuery } from '@nestjs/swagger';
 
 @Controller('questions')
 export class QuestionsController {
@@ -31,92 +28,6 @@ export class QuestionsController {
     @HttpCode(HttpStatus.CREATED)
     async generateQuestions(@Body() dto: GenerateQuestionsDto): Promise<GenerateQuestionsResponseDto> {
         return this.questionGenerationService.generateQuestions(dto);
-    }
-
-    // ============================================
-    // NEW: Import JSON file endpoint
-    // ============================================
-    @Post('import')
-    @UseInterceptors(FileInterceptor('file'))
-    @ApiConsumes('multipart/form-data')
-    @ApiBody({
-        schema: {
-            type: 'object',
-            properties: {
-                file: {
-                    type: 'string',
-                    format: 'binary',
-                },
-                sourceType: {
-                    type: 'string',
-                    enum: ['BUZZWORD', 'VIGNETTE'],
-                    description: 'Type of questions being imported',
-                },
-                sourceFile: {
-                    type: 'string',
-                    description: 'Original source file name',
-                },
-            },
-        },
-    })
-    @HttpCode(HttpStatus.CREATED)
-    async importQuestions(
-        @UploadedFile() file: any,
-        @Body('sourceType') sourceType?: string,
-        @Body('sourceFile') sourceFile?: string,
-    ): Promise<{
-        success: boolean;
-        message: string;
-        imported: number;
-        failed: number;
-        errors?: string[];
-    }> {
-        if (!file) {
-            throw new BadRequestException('No file uploaded');
-        }
-
-        // Validate file type
-        const fileExtension = file.originalname.split('.').pop()?.toLowerCase();
-        if (fileExtension !== 'json') {
-            throw new BadRequestException('Only JSON files are allowed');
-        }
-
-        // Parse JSON from buffer
-        let questions: any[];
-        try {
-            const fileContent = file.buffer.toString('utf-8');
-            questions = JSON.parse(fileContent);
-        } catch (error: any) {
-            throw new BadRequestException(`Invalid JSON format: ${error.message}`);
-        }
-
-        // Validate it's an array
-        if (!Array.isArray(questions)) {
-            throw new BadRequestException('JSON must contain an array of questions');
-        }
-
-        if (questions.length === 0) {
-            throw new BadRequestException('JSON array is empty');
-        }
-
-        // Determine source type from body or detect from first question
-        const detectedSourceType = sourceType || questions[0]?.sourceType || 'VIGNETTE';
-        const detectedSourceFile = sourceFile || file.originalname;
-
-        // Import questions
-        const result = await this.questionsService.importQuestions(
-            questions,
-            detectedSourceType as 'BUZZWORD' | 'VIGNETTE',
-            detectedSourceFile,
-        );
-
-        return {
-            success: true,
-            message: `Import completed: ${result.imported} questions imported, ${result.failed} failed`,
-            imported: result.imported,
-            failed: result.failed,
-            errors: result.errors,
-        };
     }
 
     // ============================================

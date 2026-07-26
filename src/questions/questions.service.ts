@@ -25,8 +25,11 @@ export class QuestionsService {
 
         for (const [index, questionData] of questions.entries()) {
             try {
-                // Find or create topic
-                const topic = await this.findOrCreateTopic(questionData.topicName);
+                // Find or create topic (using discipline as subject name)
+                const topic = await this.findOrCreateTopic(
+                    questionData.topicName,
+                    questionData.discipline,
+                );
 
                 // Find or create tags
                 const tagRecords = await this.processTags(questionData.tags || []);
@@ -466,61 +469,64 @@ export class QuestionsService {
     // HELPER METHODS
     // ============================================
 
-    private async findOrCreateTopic(topicName: string): Promise<Topic> {
-        // First, ensure a default subject exists
+    private async findOrCreateTopic(topicName: string, discipline?: string): Promise<Topic> {
+        // Determine subject name from discipline, default to 'Unknown'
+        const subjectName = discipline && discipline.trim() ? discipline.trim() : 'Unknown';
+
+        // Find or create the subject
         let subject = await this.prisma.subject.findFirst({
-            where: { name: 'Clinical Medicine' },
+            where: { name: { equals: subjectName, mode: 'insensitive' } },
         });
 
         if (!subject) {
-            // Create the subject first if it doesn't exist
             subject = await this.prisma.subject.create({
                 data: {
-                    name: 'Clinical Medicine',
-                    description: 'Clinical medicine topics for USMLE preparation',
+                    name: subjectName,
+                    description: `${subjectName} topics for USMLE preparation`,
                 },
             });
-            this.logger.log('Created default subject: Clinical Medicine');
+            this.logger.log(`Created subject: ${subjectName}`);
         }
 
         if (!topicName || topicName === 'Unknown Topic') {
-            // Find or create default topic
+            // Find or create default topic under this subject
             let topic = await this.prisma.topic.findFirst({
-                where: { name: 'General Medicine' },
+                where: {
+                    name: 'General Medicine',
+                    subjectId: subject.id,
+                },
             });
 
             if (!topic) {
                 topic = await this.prisma.topic.create({
                     data: {
                         name: 'General Medicine',
-                        subjectId: subject.id,  // ← Now using the subject's id
+                        subjectId: subject.id,
                     },
                 });
-                this.logger.log('Created default topic: General Medicine');
+                this.logger.log(`Created default topic 'General Medicine' under subject '${subjectName}'`);
             }
 
             return topic;
         }
 
-        // Find existing topic
+        // Find existing topic within this subject
         let topic = await this.prisma.topic.findFirst({
             where: {
-                name: {
-                    equals: topicName,
-                    mode: 'insensitive',
-                },
+                name: { equals: topicName, mode: 'insensitive' },
+                subjectId: subject.id,
             },
         });
 
         if (!topic) {
-            // Create new topic with valid subjectId
+            // Create new topic under this subject
             topic = await this.prisma.topic.create({
                 data: {
                     name: topicName,
-                    subjectId: subject.id,  // ← Now using the subject's id
+                    subjectId: subject.id,
                 },
             });
-            this.logger.log(`Created new topic: ${topicName}`);
+            this.logger.log(`Created topic '${topicName}' under subject '${subjectName}'`);
         }
 
         return topic;
