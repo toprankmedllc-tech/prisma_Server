@@ -17,7 +17,6 @@ import type { Request } from 'express';
 import { QuestionsService } from './questions.service';
 import { QuestionGenerationService } from './question-generation.service';
 import { GenerateQuestionsDto, ReviewQuestionDto, CreateQualityReviewDto, UnpublishByDisciplineDto } from './dto/request.dto';
-import { ReviewActionDto } from './dto/review-action.dto';
 import { GenerateQuestionsResponseDto, QuestionResponseDto, QuestionDetailDto, ReviewDashboardItemDto } from './dto/response.dto';
 import { ApiQuery, ApiCookieAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -204,29 +203,17 @@ export class QuestionsController {
     }
 
     // ============================================
-    // REVIEW ACTION: Unified endpoint for review or skip
+    // SKIP REVIEW: Add a question to the user's skip list
     // ============================================
-    @Post(':id/review-action')
+    @Post(':id/skip-review')
     @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Review or skip a question', description: 'Unified endpoint to either review a question (approve/reject with notes) or skip it. When skipped, the question is added to the user\'s skipped list and will not appear in future review dashboard queries. When reviewed, the question is added to the user\'s reviewed list.' })
-    async reviewAction(
+    @ApiOperation({ summary: 'Skip a question', description: 'Adds the question to the user\'s skipped list so it will not appear in future review dashboard queries. Does nothing else.' })
+    async skipReview(
         @Req() req: RequestWithUser,
         @Param('id') id: string,
-        @Body() dto: ReviewActionDto,
-    ): Promise<QuestionDetailDto | { skipped: boolean }> {
-        const userId = req.user.id;
-
-        if (dto.action === 'skip') {
-            await this.questionsService.markQuestionAsSkipped(userId, id);
-            return { skipped: true };
-        }
-
-        // action === 'review'
-        return this.questionsService.reviewQuestion(id, {
-            rejected: dto.rejected,
-            reviewedBy: userId,
-            reviewNotes: dto.reviewNotes,
-        });
+    ): Promise<{ skipped: boolean }> {
+        await this.questionsService.markQuestionAsSkipped(req.user.id, id);
+        return { skipped: true };
     }
 
     // ============================================
