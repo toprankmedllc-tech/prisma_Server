@@ -1132,6 +1132,134 @@ export class QuestionsService {
     }
 
     // ============================================
+    // NEW: Get questions reviewed by a user
+    // ============================================
+    async getReviewedQuestionsByUser(userId: string, filters?: {
+        skip?: number;
+        take?: number;
+    }): Promise<{ data: ReviewDashboardItemDto[]; total: number; page: number; limit: number }> {
+        const { skip = 0, take = 50 } = filters || {};
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { reviewedQuestions: true },
+        });
+
+        if (!user || user.reviewedQuestions.length === 0) {
+            return { data: [], total: 0, page: 1, limit: take };
+        }
+
+        const questionIds = user.reviewedQuestions;
+        const total = questionIds.length;
+
+        // Paginate the IDs array
+        const paginatedIds = questionIds.slice(skip, skip + take);
+
+        const questions = await this.prisma.question.findMany({
+            where: { id: { in: paginatedIds } },
+            include: {
+                topic: {
+                    include: { subject: true },
+                },
+            },
+        });
+
+        // Maintain the order from the user's list (most recently reviewed first)
+        const idOrder = new Map(paginatedIds.reverse().map((id, index) => [id, index]));
+        questions.sort((a, b) => (idOrder.get(a.id) || 0) - (idOrder.get(b.id) || 0));
+
+        const page = Math.floor(skip / take) + 1;
+
+        return {
+            data: questions.map((q) => ({
+                id: q.id,
+                stem: q.stem,
+                sourceType: q.sourceType,
+                difficulty: q.difficulty,
+                reviewed: q.reviewed,
+                rejected: q.rejected,
+                isPublished: q.isPublished,
+                createdAt: q.createdAt,
+                topic: {
+                    id: q.topic.id,
+                    name: q.topic.name,
+                    subject: {
+                        id: q.topic.subject.id,
+                        name: q.topic.subject.name,
+                    },
+                },
+            })),
+            total,
+            page,
+            limit: take,
+        };
+    }
+
+    // ============================================
+    // NEW: Get questions skipped by a user
+    // ============================================
+    async getSkippedQuestionsByUser(userId: string, filters?: {
+        skip?: number;
+        take?: number;
+    }): Promise<{ data: ReviewDashboardItemDto[]; total: number; page: number; limit: number }> {
+        const { skip = 0, take = 50 } = filters || {};
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { skippedQuestions: true },
+        });
+
+        if (!user || user.skippedQuestions.length === 0) {
+            return { data: [], total: 0, page: 1, limit: take };
+        }
+
+        const questionIds = user.skippedQuestions;
+        const total = questionIds.length;
+
+        // Paginate the IDs array
+        const paginatedIds = questionIds.slice(skip, skip + take);
+
+        const questions = await this.prisma.question.findMany({
+            where: { id: { in: paginatedIds } },
+            include: {
+                topic: {
+                    include: { subject: true },
+                },
+            },
+        });
+
+        // Maintain the order from the user's list (most recently skipped first)
+        const idOrder = new Map(paginatedIds.reverse().map((id, index) => [id, index]));
+        questions.sort((a, b) => (idOrder.get(a.id) || 0) - (idOrder.get(b.id) || 0));
+
+        const page = Math.floor(skip / take) + 1;
+
+        return {
+            data: questions.map((q) => ({
+                id: q.id,
+                stem: q.stem,
+                sourceType: q.sourceType,
+                difficulty: q.difficulty,
+                reviewed: q.reviewed,
+                rejected: q.rejected,
+                isPublished: q.isPublished,
+                createdAt: q.createdAt,
+                topic: {
+                    id: q.topic.id,
+                    name: q.topic.name,
+                    subject: {
+                        id: q.topic.subject.id,
+                        name: q.topic.subject.name,
+                    },
+                },
+            })),
+            total,
+            page,
+            limit: take,
+        };
+    }
+
+    // ============================================
     // NEW: Mark a question as skipped by a user
     // ============================================
     async markQuestionAsSkipped(userId: string, questionId: string): Promise<void> {

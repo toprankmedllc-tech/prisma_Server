@@ -164,6 +164,52 @@ export class QuestionsController {
 
 
     // ============================================
+    // REVIEWED: Get questions reviewed by the current user
+    // ============================================
+    @Get('reviewed')
+    @ApiOperation({ summary: 'Get reviewed questions', description: 'Returns paginated list of questions the current user has reviewed (approved or rejected). Ordered by most recently reviewed first.' })
+    @ApiQuery({ name: 'skip', required: false, type: Number, description: 'Number of records to skip (default 0)' })
+    @ApiQuery({ name: 'take', required: false, type: Number, description: 'Number of records to take (default 50)' })
+    async getReviewedQuestions(
+        @Req() req: RequestWithUser,
+        @Query('skip') skip?: string,
+        @Query('take') take?: string,
+    ): Promise<{
+        data: ReviewDashboardItemDto[];
+        total: number;
+        page: number;
+        limit: number;
+    }> {
+        return this.questionsService.getReviewedQuestionsByUser(req.user.id, {
+            skip: skip ? parseInt(skip) : undefined,
+            take: take ? parseInt(take) : undefined,
+        });
+    }
+
+    // ============================================
+    // SKIPPED: Get questions skipped by the current user
+    // ============================================
+    @Get('skipped')
+    @ApiOperation({ summary: 'Get skipped questions', description: 'Returns paginated list of questions the current user has skipped. Ordered by most recently skipped first.' })
+    @ApiQuery({ name: 'skip', required: false, type: Number, description: 'Number of records to skip (default 0)' })
+    @ApiQuery({ name: 'take', required: false, type: Number, description: 'Number of records to take (default 50)' })
+    async getSkippedQuestions(
+        @Req() req: RequestWithUser,
+        @Query('skip') skip?: string,
+        @Query('take') take?: string,
+    ): Promise<{
+        data: ReviewDashboardItemDto[];
+        total: number;
+        page: number;
+        limit: number;
+    }> {
+        return this.questionsService.getSkippedQuestionsByUser(req.user.id, {
+            skip: skip ? parseInt(skip) : undefined,
+            take: take ? parseInt(take) : undefined,
+        });
+    }
+
+    // ============================================
     // REVIEW: Get full question with less details
     // ============================================
 
