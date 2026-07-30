@@ -331,6 +331,94 @@ export class QuestionsService {
     }
 
     // ============================================
+    // NEW: Get all subjects with their topics (and optional question counts)
+    // ============================================
+    async getSubjectsWithTopics(includeTopics: boolean = true): Promise<any[]> {
+        const subjects = await this.prisma.subject.findMany({
+            include: includeTopics ? {
+                topics: {
+                    orderBy: { name: 'asc' },
+                },
+            } : undefined,
+            orderBy: { name: 'asc' },
+        });
+
+        if (!includeTopics) {
+            return subjects;
+        }
+
+        // Get all topic counts in a single grouped query instead of N individual queries
+        const topicCounts = await this.prisma.question.groupBy({
+            by: ['topicId'],
+            _count: true,
+        });
+
+        // Build a map of topicId -> count for O(1) lookups
+        const countMap = new Map<string, number>();
+        topicCounts.forEach((group) => {
+            countMap.set(group.topicId, group._count);
+        });
+
+        // Attach counts to topics
+        return subjects.map((subject: any) => ({
+            ...subject,
+            topics: subject.topics.map((topic: any) => ({
+                ...topic,
+                questionCount: countMap.get(topic.id) || 0,
+            })),
+        }));
+    }
+
+    // ============================================
+    // NEW: Get all topics (optionally filtered by subject)
+    // ============================================
+    async getTopics(subjectId?: string): Promise<{ topics: { topicId: string; topic: string; questionCount: number }[]; totalTopics: number; totalQuestionsCount: number }> {
+        const where: any = {};
+        if (subjectId) {
+            where.subjectId = subjectId;
+        }
+
+        // Get all topics with their question counts in a single grouped query
+        const topics = await this.prisma.topic.findMany({
+            where,
+            orderBy: { name: 'asc' },
+        });
+
+        if (topics.length === 0) {
+            return { topics: [], totalTopics: 0, totalQuestionsCount: 0 };
+        }
+
+        const topicIds = topics.map(t => t.id);
+
+        const topicCounts = await this.prisma.question.groupBy({
+            by: ['topicId'],
+            where: {
+                topicId: { in: topicIds },
+            },
+            _count: true,
+        });
+
+        const countMap = new Map<string, number>();
+        topicCounts.forEach((group) => {
+            countMap.set(group.topicId, group._count);
+        });
+
+        const mappedTopics = topics.map((topic) => ({
+            topicId: topic.id,
+            topic: topic.name,
+            questionCount: countMap.get(topic.id) || 0,
+        }));
+
+        const totalQuestionsCount = mappedTopics.reduce((sum, t) => sum + t.questionCount, 0);
+
+        return {
+            topics: mappedTopics,
+            totalTopics: mappedTopics.length,
+            totalQuestionsCount,
+        };
+    }
+
+    // ============================================
     // NEW: Bulk delete questions
     // ============================================
     async bulkDeleteQuestions(ids: string[]): Promise<void> {
@@ -620,7 +708,7 @@ export class QuestionsService {
         }));
     }
 
-    async findOne(id: string): Promise<QuestionResponseDto> {
+    async findOneQuestion(id: string): Promise<QuestionResponseDto> {
         const question = await this.prisma.question.findUnique({
             where: { id },
             include: {

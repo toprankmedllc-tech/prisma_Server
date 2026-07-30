@@ -29,6 +29,8 @@ interface RequestWithUser extends Request {
     };
 }
 
+import { SubjectResponseDto } from './dto/response.dto';
+
 @ApiTags('Questions')
 @ApiCookieAuth('access_token')
 @UseGuards(JwtAuthGuard)
@@ -38,6 +40,8 @@ export class QuestionsController {
         private readonly questionsService: QuestionsService,
         private readonly questionGenerationService: QuestionGenerationService,
     ) { }
+
+   
 
     @Post('generate')
     @HttpCode(HttpStatus.CREATED)
@@ -132,21 +136,54 @@ export class QuestionsController {
         });
     }
 
+    // ============================================
+    // SUBJECTS & TOPICS: Get all subjects with their topics
+    // ============================================
+    @Get('subjects')
+    @ApiOperation({ summary: 'Get all subjects', description: 'Returns all subjects. When includeTopics=true (default), includes topics with question counts.' })
+    @ApiQuery({ name: 'includeTopics', required: false, type: Boolean, description: 'Include topics with question Count in each topic ' })
+    async getSubjects(
+        @Query('includeTopics') includeTopics?: string,
+    ): Promise<SubjectResponseDto[]> {
+        return this.questionsService.getSubjectsWithTopics(includeTopics !== 'false');
+    }
+
+    // ============================================
+    // TOPICS: Get all topics (optionally filtered by subject)
+    // ============================================
+
+
+    @Get('topics')
+    @ApiOperation({ summary: 'Get all topics', description: 'Returns all topics with their question counts. Optionally filter by subjectId. Returns array of { topicId, topic, questionCount }.' })
+    @ApiQuery({ name: 'subjectId', required: false, type: String, description: 'Filter topics by subject ID' })
+    async getTopics(
+        @Query('subjectId') subjectId?: string,
+    ): Promise<{ totalTopics: number; totalQuestionsCount: number ; topics: { topicId: string; topic: string; questionCount: number }[];  }> {
+        return this.questionsService.getTopics(subjectId);
+    }
+
+
+
+    // ============================================
+    // REVIEW: Get full question with less details
+    // ============================================
+
+
+
     @Get(':id')
-    @ApiOperation({ summary: 'Get question by ID', description: 'Returns a single question with its choices, tags, and topic. Does not include wrong options, vitals, or quality review.' })
+    @ApiOperation({ summary: 'Get question by ID with limited details', description: 'Returns a single question with its choices, tags, and topic. Does not include wrong options, vitals, or quality review.' })
     async findOne(@Param('id') id: string): Promise<QuestionResponseDto> {
-        return this.questionsService.findOne(id);
+        return this.questionsService.findOneQuestion(id);
     }
 
     // ============================================
     // REVIEW: Get full question detail for review
     // ============================================
     @Get(':id/detail')
-    @ApiOperation({ summary: 'Get full question detail', description: 'Returns complete question data with all nested relations: choices, wrong options, vitals, quality review, tags, topic, and subject. Used for the review detail view.' })
+    @ApiOperation({ summary: 'Get full question by ID with all details', description: 'Returns complete question data with all nested relations: choices, wrong options, vitals, quality review, tags, topic, and subject. Used for the review detail view.' })
     async findDetail(@Param('id') id: string): Promise<QuestionDetailDto> {
         return this.questionsService.findFullDetail(id);
     }
-
     // @Patch(':id/publish')
     // @ApiOperation({ summary: 'Publish a question', description: 'Sets isPublished to true. Use after quality review is complete to make the question visible to students.' })
     // async publish(@Param('id') id: string): Promise<QuestionResponseDto> {

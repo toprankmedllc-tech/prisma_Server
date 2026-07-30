@@ -1,5 +1,19 @@
 import { Difficulty, QuestionSource, QuestionSourceType, CognitiveLevel } from '@prisma/client';
 
+// export class TopicResponseDto {
+//     id!: string;
+//     name!: string;
+//     subjectId!: string;
+//     questionCount?: number;
+// }
+
+export class SubjectResponseDto {
+    id!: string;
+    name!: string;
+    description!: string | null;
+    // topics!: TopicResponseDto[];
+}
+
 export class ChoiceResponseDto {
     id!: string;
     text!: string;
