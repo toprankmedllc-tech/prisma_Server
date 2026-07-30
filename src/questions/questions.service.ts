@@ -219,15 +219,15 @@ export class QuestionsService {
         }
 
         if (difficulty) {
-            where.difficulty = difficulty as Difficulty;
+            where.difficulty = difficulty.toUpperCase() as Difficulty;
         }
 
         if (source) {
-            where.source = source as QuestionSource;
+            where.source = source.toUpperCase() as QuestionSource;
         }
 
         if (sourceType) {
-            where.sourceType = sourceType as QuestionSourceType;
+            where.sourceType = sourceType.toUpperCase() as QuestionSourceType;
         }
 
         if (system) {
@@ -245,7 +245,7 @@ export class QuestionsService {
         }
 
         if (cognitiveLevel) {
-            where.cognitiveLevel = cognitiveLevel as CognitiveLevel;
+            where.cognitiveLevel = cognitiveLevel.toUpperCase() as CognitiveLevel;
         }
 
         if (trapType) {
