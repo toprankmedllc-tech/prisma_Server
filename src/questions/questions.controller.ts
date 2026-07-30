@@ -264,14 +264,15 @@ export class QuestionsController {
     // STATS: Get statistics endpoint
     // ============================================
     @Get('stats/summary')
-    @ApiOperation({ summary: 'Question statistics', description: 'Returns aggregate statistics: total count, breakdown by difficulty, source type, source, system, discipline, and published vs unpublished counts.' })
+    @ApiOperation({ summary: 'Question statistics', description: 'Returns aggregate statistics: total count, breakdown by difficulty, source type, source, system, subject, topic, and published vs unpublished counts.' })
     async getStats(): Promise<{
         total: number;
         byDifficulty: Record<string, number>;
         bySourceType: Record<string, number>;
         bySource: Record<string, number>;
         bySystem: Record<string, number>;
-        byDiscipline: Record<string, number>;
+        bySubject: Record<string, number>;
+        byTopic: Record<string, number>;
         published: number;
         unpublished: number;
     }> {

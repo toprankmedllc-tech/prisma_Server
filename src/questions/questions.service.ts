@@ -515,19 +515,28 @@ export class QuestionsService {
             }
         });
 
-        // Get disciplines with counts
-        const disciplineGroups = await this.prisma.question.groupBy({
-            by: ['discipline'],
-            where: { discipline: { not: null } },
+        // Get questions grouped by topic and subject
+        const topicCounts = await this.prisma.question.groupBy({
+            by: ['topicId'],
             _count: true,
         });
 
-        const byDiscipline: Record<string, number> = {};
-        disciplineGroups.forEach(group => {
-            if (group.discipline) {
-                byDiscipline[group.discipline] = group._count;
-            }
+        const allTopics = await this.prisma.topic.findMany({
+            include: { subject: true },
         });
+
+        const topicCountMap = new Map<string, number>();
+        topicCounts.forEach(g => topicCountMap.set(g.topicId, g._count));
+
+        const bySubject: Record<string, number> = {};
+        const byTopic: Record<string, number> = {};
+
+        for (const topic of allTopics) {
+            const count = topicCountMap.get(topic.id) || 0;
+            const subjectName = topic.subject.name;
+            bySubject[subjectName] = (bySubject[subjectName] || 0) + count;
+            byTopic[topic.name] = count;
+        }
 
         return {
             total,
@@ -547,7 +556,8 @@ export class QuestionsService {
                 IMPORTED: bySource[3],
             },
             bySystem,
-            byDiscipline,
+            bySubject,
+            byTopic,
             published,
             unpublished,
         };
