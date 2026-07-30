@@ -193,13 +193,13 @@ export class QuestionsController {
     // REVIEW: Review a question (approve, reject, or add notes)
     // ============================================
     @Patch(':id/review')
-    @ApiOperation({ summary: 'Review a question', description: 'Mark a question as reviewed (approve or reject). Set  rejected=false to approve. Set rejected=true to reject. Returns full question detail after u set rejected = false  after that  send quality review data via api below to publish the question .' })
+    @ApiOperation({ summary: 'Review a question', description: 'Mark a question as reviewed (approve or reject). Set  rejected=false to approve. Set rejected=true to reject. Returns full question detail after u set rejected = false  after that  send quality review data via another api below to publish the question .It is not necessary to send reviewedBy through body , in the backend it takes userId from cookies so that we can keep track of the  who reviewed the question .' })
     async review(
         @Req() req: RequestWithUser,
         @Param('id') id: string,
         @Body() dto: ReviewQuestionDto,
     ): Promise<QuestionDetailDto> {
-        return this.questionsService.reviewQuestion(id, { ...dto, reviewedBy: dto.reviewedBy || req.user.id });
+        return this.questionsService.reviewQuestion(id, { ...dto, reviewedBy:  req.user.id });
     }
 
     // ============================================
@@ -207,7 +207,7 @@ export class QuestionsController {
     // ============================================
     @Post(':id/skip-review')
     @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Skip a question', description: 'Adds the question to the user\'s skipped list so it will not appear in future review dashboard queries. Does nothing else.' })
+    @ApiOperation({ summary: 'Skip a question', description: 'Adds the question to the user\'s skipped list so it will not appear in future review dashboard queries. send only questionId in the param.  ' })
     async skipReview(
         @Req() req: RequestWithUser,
         @Param('id') id: string,

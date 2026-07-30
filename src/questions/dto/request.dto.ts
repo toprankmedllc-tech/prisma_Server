@@ -164,10 +164,10 @@ export class ReviewQuestionDto {
     @IsBoolean()
     rejected?: boolean;
 
-    @ApiPropertyOptional({ description: 'User ID of the reviewer (for audit trail)' })
-    @IsOptional()
-    @IsString()
-    reviewedBy?: string;
+    // @ApiPropertyOptional({ description: 'User ID of the reviewer (for audit trail)' })
+    // @IsOptional()
+    // @IsString()
+    // reviewedBy?: string;
 
     @ApiPropertyOptional({
         description: 'Attribute-level review notes. Keys can be any question field (stem, leadInQuestion, explanation, choices, correctAnswer, medicalAccuracy, usmleStyle, explanationQuality, originality, grammar, vignetteReview, buzzwordReview, generalNotes, etc.)',
