@@ -888,92 +888,113 @@ export class QuestionsService {
     }
 
     // ============================================
-    // NEW: Get review dashboard questions (random, up to 20, by subject/topic)
-    // Excludes questions the user has already reviewed or skipped
+    // GET USER PREFERENCES: Get the user's preferred subjects for review assignment
     // ============================================
-    async getReviewDashboardQuestions(filters: {
-        userId?: string;
-        subject?: string;
-        topic?: string;
-        limit?: number;
-    }): Promise<ReviewDashboardItemDto[]> {
-        const { userId, subject, topic, limit = 20 } = filters;
+    async getUserPreferences(userId: string): Promise<{ preferredSubjects: string[] }> {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { preferredSubjects: true },
+        });
 
-        // Get the user's already-processed question IDs
-        let reviewedQuestionIds: string[] = [];
-        let skippedQuestionIds: string[] = [];
+        if (!user) {
+            throw new NotFoundException(`User with ID "${userId}" not found`);
+        }
 
-        if (userId) {
-            const user = await this.prisma.user.findUnique({
-                where: { id: userId },
-                select: { reviewedQuestions: true, skippedQuestions: true },
-            });
-            if (user) {
-                reviewedQuestionIds = user.reviewedQuestions;
-                skippedQuestionIds = user.skippedQuestions;
+        return { preferredSubjects: user.preferredSubjects };
+    }
+
+    // ============================================
+    // UPDATE USER PREFERENCES: Save the user's preferred subjects
+    // ============================================
+    async updateUserPreferences(userId: string, preferredSubjects: string[]): Promise<{ preferredSubjects: string[] }> {
+        const user = await this.prisma.user.update({
+            where: { id: userId },
+            data: { preferredSubjects },
+            select: { preferredSubjects: true },
+        });
+
+        return { preferredSubjects: user.preferredSubjects };
+    }
+
+    // ============================================
+    // ASSIGN QUESTIONS TO USER: Lock 20 questions exclusively to this user
+    // ============================================
+    async assignQuestionsToUser(userId: string, subjects?: string[]): Promise<ReviewDashboardItemDto[]> {
+        const ASSIGN_COUNT = 20;
+
+        // 1. Get the user's preferred subjects (if not provided, use saved ones)
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { preferredSubjects: true, assignedQuestions: true, reviewedQuestions: true, skippedQuestions: true },
+        });
+
+        if (!user) {
+            throw new NotFoundException(`User with ID "${userId}" not found`);
+        }
+
+        // If user already has assigned questions, check if there are still pending ones
+        if (user.assignedQuestions.length > 0) {
+            const pendingQuestions = await this.getQuestionsByIds(user.assignedQuestions, userId);
+            if (pendingQuestions.length > 0) {
+                // There are still pending questions - return them (user hasn't finished the bucket yet)
+                return pendingQuestions;
             }
+            // All assigned questions have been reviewed or skipped - clear them so we can assign a fresh bucket
+            await this.prisma.user.update({
+                where: { id: userId },
+                data: { assignedQuestions: [] },
+            });
+            user.assignedQuestions = [];
         }
 
-        const excludeIds = [...new Set([...reviewedQuestionIds, ...skippedQuestionIds])];
-
-        const where: any = {};
-        const topicWhere: any = {};
-
-        if (subject) {
-            topicWhere.subject = {
-                name: { equals: subject, mode: 'insensitive' },
-            };
+        const selectedSubjects = subjects || user.preferredSubjects;
+        if (!selectedSubjects || selectedSubjects.length === 0) {
+            throw new Error('Please select at least one subject to assign questions');
         }
 
-        if (topic) {
-            topicWhere.name = { equals: topic, mode: 'insensitive' };
-        }
+        // 2. Collect all question IDs already assigned to ANY user (to avoid double-assignment)
+        const allUsers = await this.prisma.user.findMany({
+            select: { assignedQuestions: true },
+        });
+        const allAssignedIds = new Set<string>();
+        allUsers.forEach((u) => {
+            u.assignedQuestions.forEach((qId) => allAssignedIds.add(qId));
+        });
 
-        if (Object.keys(topicWhere).length > 0) {
-            where.topic = topicWhere;
-        }
+        // 3. Also exclude user's own reviewed/skipped questions
+        const userReviewedOrSkipped = new Set([
+            ...user.reviewedQuestions,
+            ...user.skippedQuestions,
+        ]);
 
-        // Exclude already-processed questions
-        if (excludeIds.length > 0) {
-            where.id = { notIn: excludeIds };
-        }
+        // 4. Combine all exclude IDs
+        const excludeIds = new Set([...allAssignedIds, ...userReviewedOrSkipped]);
 
-        // Get total count first
-        const totalCount = await this.prisma.question.count({ where });
-
-        if (totalCount === 0) {
-            return [];
-        }
-
-        // Use raw query to get random questions efficiently
-        const take = Math.min(limit, totalCount);
-
-        // Build parameterized query with exclude list
+        // 5. Find questions matching the subjects, not already assigned
+        // Use raw query with subject filter and RANDOM() to pick 20
         let paramIndex = 1;
         const params: any[] = [];
         const conditions: string[] = [];
 
-        if (subject) {
-            conditions.push(`LOWER(s.name) = LOWER($${paramIndex})`);
-            params.push(subject);
+        // Subject filter
+        const subjectConditions = selectedSubjects.map((s) => {
+            const param = `$${paramIndex}`;
             paramIndex++;
-        }
+            params.push(s);
+            return `LOWER(s.name) = LOWER(${param})`;
+        });
+        conditions.push(`(${subjectConditions.join(' OR ')})`);
 
-        if (topic) {
-            conditions.push(`LOWER(t.name) = LOWER($${paramIndex})`);
-            params.push(topic);
-            paramIndex++;
-        }
-
-        if (excludeIds.length > 0) {
-            // Build a parameterized NOT IN clause
-            const placeholders = excludeIds.map((_, i) => `$${paramIndex + i}`);
+        // Exclude already assigned
+        if (excludeIds.size > 0) {
+            const excludeArray = Array.from(excludeIds);
+            const placeholders = excludeArray.map((_, i) => `$${paramIndex + i}`);
             conditions.push(`q.id NOT IN (${placeholders.join(',')})`);
-            params.push(...excludeIds);
-            paramIndex += excludeIds.length;
+            params.push(...excludeArray);
+            paramIndex += excludeArray.length;
         }
 
-        const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+        const whereClause = 'WHERE ' + conditions.join(' AND ');
 
         const questions: any[] = await this.prisma.$queryRawUnsafe(`
             SELECT q.id, q.stem, q."sourceType", q.difficulty, q.reviewed, q.rejected, q."isPublished", q."createdAt",
@@ -984,9 +1005,24 @@ export class QuestionsService {
             JOIN "Subject" s ON s.id = t."subjectId"
             ${whereClause}
             ORDER BY RANDOM()
-            LIMIT ${take}
+            LIMIT ${ASSIGN_COUNT}
         `, ...params);
 
+        if (questions.length === 0) {
+            throw new Error('No questions available for the selected subjects. All questions may already be assigned to other reviewers.');
+        }
+
+        // 6. Save the assigned question IDs to the user
+        const assignedIds = questions.map((q: any) => q.id);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                assignedQuestions: assignedIds,
+                preferredSubjects: selectedSubjects,
+            },
+        });
+
+        // 7. Return the questions
         return questions.map((q: any) => ({
             id: q.id,
             stem: q.stem,
@@ -1005,6 +1041,87 @@ export class QuestionsService {
                 },
             },
         }));
+    }
+
+    // ============================================
+    // HELPER: Get questions by IDs (for fetching assigned questions)
+    // Excludes already reviewed or skipped questions
+    // ============================================
+    private async getQuestionsByIds(ids: string[], userId: string): Promise<ReviewDashboardItemDto[]> {
+        if (ids.length === 0) return [];
+
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { reviewedQuestions: true, skippedQuestions: true },
+        });
+
+        const doneIds = new Set([
+            ...(user?.reviewedQuestions || []),
+            ...(user?.skippedQuestions || []),
+        ]);
+
+        // Filter out already reviewed/skipped questions
+        const pendingIds = ids.filter((id) => !doneIds.has(id));
+
+        if (pendingIds.length === 0) return [];
+
+        const questions = await this.prisma.question.findMany({
+            where: { id: { in: pendingIds } },
+            include: {
+                topic: {
+                    include: { subject: true },
+                },
+            },
+        });
+
+        // Maintain the order from the user's assigned list
+        const idOrder = new Map(pendingIds.map((id, index) => [id, index]));
+        questions.sort((a, b) => (idOrder.get(a.id) || 0) - (idOrder.get(b.id) || 0));
+
+        return questions.map((q) => ({
+            id: q.id,
+            stem: q.stem,
+            sourceType: q.sourceType,
+            difficulty: q.difficulty,
+            reviewed: q.reviewed,
+            rejected: q.rejected,
+            isPublished: q.isPublished,
+            createdAt: q.createdAt,
+            topic: {
+                id: q.topic.id,
+                name: q.topic.name,
+                subject: {
+                    id: q.topic.subject.id,
+                    name: q.topic.subject.name,
+                },
+            },
+        }));
+    }
+
+    // ============================================
+    // Get review dashboard: Returns user's assigned questions
+    // ============================================
+    async getReviewDashboardQuestions(filters: {
+        userId?: string;
+        subject?: string;
+        topic?: string;
+        limit?: number;
+    }): Promise<ReviewDashboardItemDto[]> {
+        const { userId } = filters;
+
+        if (!userId) return [];
+
+        // Get the user's assigned questions
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { assignedQuestions: true },
+        });
+
+        if (!user || user.assignedQuestions.length === 0) {
+            return [];
+        }
+
+        return this.getQuestionsByIds(user.assignedQuestions, userId);
     }
 
     // ============================================

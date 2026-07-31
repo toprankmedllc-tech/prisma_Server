@@ -112,6 +112,11 @@ model User {
   reviewedQuestions String[] @default([])
   skippedQuestions  String[] @default([])
 
+  // Track questions assigned to this user for review (exclusive assignment)
+  assignedQuestions  String[] @default([])
+  // User's preferred subjects for question assignment
+  preferredSubjects  String[] @default([])
+
   sessions Session[]
 
   attempts QuestionAttempt[]

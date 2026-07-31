@@ -210,6 +210,41 @@ export class QuestionsController {
     }
 
     // ============================================
+    // USER PREFERENCES: Get user's preferred subjects for review assignment
+    // ============================================
+    @Get('preferences')
+    @ApiOperation({ summary: 'Get user preferences', description: 'Returns the user\'s preferred subjects for question assignment in the review dashboard.' })
+    async getUserPreferences(
+        @Req() req: RequestWithUser,
+    ): Promise<{ preferredSubjects: string[] }> {
+        return this.questionsService.getUserPreferences(req.user.id);
+    }
+
+    // ============================================
+    // USER PREFERENCES: Update user's preferred subjects
+    // ============================================
+    @Patch('preferences')
+    @ApiOperation({ summary: 'Update user preferences', description: 'Saves the user\'s preferred subjects for question assignment.' })
+    async updateUserPreferences(
+        @Req() req: RequestWithUser,
+        @Body() body: { preferredSubjects: string[] },
+    ): Promise<{ preferredSubjects: string[] }> {
+        return this.questionsService.updateUserPreferences(req.user.id, body.preferredSubjects);
+    }
+
+    // ============================================
+    // ASSIGN: Assign 20 questions to the user exclusively
+    // ============================================
+    @Post('assign')
+    @ApiOperation({ summary: 'Assign questions to user', description: 'Finds 20 unassigned questions matching the user\'s preferred subjects and locks them exclusively to this user. Other reviewers will not get these questions.' })
+    async assignQuestions(
+        @Req() req: RequestWithUser,
+        @Body() body: { subjects?: string[] },
+    ): Promise<ReviewDashboardItemDto[]> {
+        return this.questionsService.assignQuestionsToUser(req.user.id, body.subjects);
+    }
+
+    // ============================================
     // REVIEW: Get full question with less details
     // ============================================
 

@@ -11,8 +11,24 @@ async function bootstrap() {
   // Cookie parser middleware for reading cookies
   app.use(cookieParser());
 
+  // Allowed origins for CORS
+  const allowedOrigins = [
+    'https://staging-test.toprankmd.com',
+    'https://usmle-review.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ];
+
   app.enableCors({
-    origin: process.env.FRONTEND_URL ,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (Postman, curl, server-to-server)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
+      }
+    },
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     allowedHeaders: 'Content-Type, Accept, Authorization',
