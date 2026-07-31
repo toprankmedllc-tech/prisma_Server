@@ -9,6 +9,7 @@ import { LLMModule } from './llm/llm.module';
 import { DocumentsModule } from './documents/documents.module';
 import configuration from './config/configuration';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -24,7 +25,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
     ChromaModule,
     LLMModule,
     DocumentsModule,
-    DashboardModule
+    DashboardModule,
+    AdminModule,
   ],
 })
 export class AppModule { }

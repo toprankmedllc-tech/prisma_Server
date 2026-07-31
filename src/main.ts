@@ -16,7 +16,7 @@ async function bootstrap() {
     'https://staging-test.toprankmd.com',
     'https://usmle-review.vercel.app',
     'http://localhost:3000',
-    'http://localhost:3001',
+    'http://localhost:3001',     // adding this here for cors error check 
   ];
 
   app.enableCors({
@@ -26,7 +26,8 @@ async function bootstrap() {
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
+        // / custome error message  for frontend so that we can figure out exact error 
+        callback(new Error(`Origin ${origin} not allowed by CORS`)); 
       }
     },
     credentials: true,
