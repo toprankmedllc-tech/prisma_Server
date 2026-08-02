@@ -395,13 +395,22 @@ model Document {
 
   title String
 
+  content String?     // Store the original content for re-ingestion
+
   source String?
 
+  fileType String?    // e.g., 'markdown', 'text', 'html', 'pdf', 'docx'
+
+  charCount Int?      // Total character count of original content
+
   status DocumentStatus
+
+  metadata Json?      // Store chunking config (chunkSize, overlap, strategy, etc.)
 
   chunks DocumentChunk[]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model DocumentChunk {
@@ -543,3 +552,5 @@ model Message {
 
   @@index([conversationId])
 }
+
+

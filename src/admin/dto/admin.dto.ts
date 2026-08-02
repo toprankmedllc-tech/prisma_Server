@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsString, IsIn } from 'class-validator';
 
 // ============================================
 // OVERVIEW STATS
@@ -178,6 +179,8 @@ export class TopicOptionDto {
 // ============================================
 export class UpdateUserRoleDto {
     @ApiProperty({ description: 'New role for the user', enum: ['STUDENT', 'REVIEWER', 'ADMIN'] })
+    @IsString()
+    @IsIn(['STUDENT', 'REVIEWER', 'ADMIN'])
     role!: 'STUDENT' | 'REVIEWER' | 'ADMIN';
 }
 

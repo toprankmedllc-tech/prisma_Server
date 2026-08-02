@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ChromaService } from '../chroma/chroma.service';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { DocumentResponseDto, DocumentDetailResponseDto } from './dto/document-response.dto';
+import { ChunkStrategy } from './dto/chunking-config.dto';
 
 @Injectable()
 export class DocumentsService {
@@ -12,11 +13,27 @@ export class DocumentsService {
     ) { }
 
     async create(dto: UploadDocumentDto): Promise<DocumentResponseDto> {
+        const chunkingConfig = dto.chunkingConfig || {};
+        const charCount = dto.content ? dto.content.length : 0;
+
         const document = await this.prisma.document.create({
             data: {
                 title: dto.title,
                 source: dto.source,
+                fileType: dto.fileType || 'markdown',
+                charCount,
                 status: 'UPLOADED',
+                content: dto.content,
+                metadata: {
+                    chunkingConfig: {
+                        strategy: chunkingConfig.strategy || ChunkStrategy.MARKDOWN,
+                        chunkSize: chunkingConfig.chunkSize || 1000,
+                        chunkOverlap: chunkingConfig.chunkOverlap || 100,
+                        stripMarkdown: chunkingConfig.stripMarkdown || false,
+                        includeTitlePrefix: chunkingConfig.includeTitlePrefix !== false,
+                    },
+                    ...(dto.metadata || {}),
+                },
             },
         });
 
@@ -24,9 +41,17 @@ export class DocumentsService {
             id: document.id,
             title: document.title,
             source: document.source,
+            fileType: document.fileType,
+            charCount: document.charCount,
             status: document.status,
             chunkCount: 0,
+            chunkingConfig: {
+                strategy: (chunkingConfig.strategy as ChunkStrategy) || ChunkStrategy.MARKDOWN,
+                chunkSize: chunkingConfig.chunkSize || 1000,
+                chunkOverlap: chunkingConfig.chunkOverlap || 100,
+            },
             createdAt: document.createdAt,
+            updatedAt: document.updatedAt,
         };
     }
 
@@ -40,14 +65,27 @@ export class DocumentsService {
             orderBy: { createdAt: 'desc' },
         });
 
-        return documents.map((doc) => ({
-            id: doc.id,
-            title: doc.title,
-            source: doc.source,
-            status: doc.status,
-            chunkCount: doc.chunks.length,
-            createdAt: doc.createdAt,
-        }));
+        return documents.map((doc) => {
+            const storedConfig = (doc.metadata as any)?.chunkingConfig || {};
+            return {
+                id: doc.id,
+                title: doc.title,
+                source: doc.source,
+                fileType: doc.fileType,
+                charCount: doc.charCount,
+                status: doc.status,
+                chunkCount: doc.chunks.length,
+                chunkingConfig: storedConfig.strategy
+                    ? {
+                          strategy: storedConfig.strategy as ChunkStrategy,
+                          chunkSize: storedConfig.chunkSize || 1000,
+                          chunkOverlap: storedConfig.chunkOverlap || 100,
+                      }
+                    : null,
+                createdAt: doc.createdAt,
+                updatedAt: doc.updatedAt,
+            };
+        });
     }
 
     async findOne(id: string): Promise<DocumentDetailResponseDto> {
@@ -64,13 +102,26 @@ export class DocumentsService {
             throw new NotFoundException(`Document with ID "${id}" not found`);
         }
 
+        const storedConfig = (document.metadata as any)?.chunkingConfig || {};
+
         return {
             id: document.id,
             title: document.title,
             source: document.source,
+            fileType: document.fileType,
+            charCount: document.charCount,
             status: document.status,
             chunkCount: document.chunks.length,
+            content: document.content,
+            chunkingConfig: storedConfig.strategy
+                ? {
+                      strategy: storedConfig.strategy as ChunkStrategy,
+                      chunkSize: storedConfig.chunkSize || 1000,
+                      chunkOverlap: storedConfig.chunkOverlap || 100,
+                  }
+                : null,
             createdAt: document.createdAt,
+            updatedAt: document.updatedAt,
             chunks: document.chunks.map((chunk) => ({
                 id: chunk.id,
                 documentId: chunk.documentId,
