@@ -431,6 +431,18 @@ model DocumentChunk {
   createdAt DateTime @default(now())
 }
 
+model ExamQuestion {
+  examId     String
+  questionId String
+  blockIndex Int @default(0)
+
+  exam Exam @relation(fields: [examId], references: [id])
+  question Question @relation(fields: [questionId], references: [id])
+
+  @@id([examId, questionId])
+  @@index([examId, blockIndex])
+}
+
 model ExamAttempt {
   id String @id @default(cuid())
 
@@ -444,32 +456,40 @@ model ExamAttempt {
 
   completedAt DateTime?
 
+  // Track individual question attempts within this exam attempt
+  questionAttempts Json? // Array of { questionId, selectedChoiceId, isCorrect, timeSpentSec, blockIndex }
   user User @relation(fields: [userId], references: [id])
 
   exam Exam @relation(fields: [examId], references: [id])
-}
 
-model ExamQuestion {
-  examId     String
-  questionId String
-
-  exam Exam @relation(fields: [examId], references: [id])
-
-  question Question @relation(fields: [questionId], references: [id])
-
-  @@id([examId, questionId])
+  @@index([examId])
+  @@index([userId])
 }
 
 model Exam {
   id String @id @default(cuid())
 
   title String
+  description String?
 
+  // Exam structure configuration
+  blockCount          Int @default(8)
+  questionsPerBlock   Int @default(20)
+  secondsPerQuestion  Int @default(90)
+
+  // Computed total duration in minutes (blockCount * questionsPerBlock * secondsPerQuestion / 60)
   durationMin Int
 
-  questions ExamQuestion[]
+  // Question selection settings stored as JSON
+  // { subjects?: string[], topics?: string[], difficulties?: string[], sourceTypes?: string[], onlyPublished?: boolean, examType?: string }
+  selectionSettings Json?
 
+  // Status: use isActive instead of delete (set to false to disable)
+  isActive Boolean @default(true)
+
+  questions ExamQuestion[]
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   examAttempts ExamAttempt[]
 }
@@ -495,11 +515,9 @@ model Subject {
   id String @id @default(cuid())
 
   name String @unique
-
   description String?
 
   topics Topic[]
-
   createdAt DateTime @default(now())
 }
 
@@ -507,7 +525,6 @@ model Topic {
   id String @id @default(cuid())
 
   name String
-
   subjectId String
   subject   Subject @relation(fields: [subjectId], references: [id])
 
@@ -518,7 +535,6 @@ model Topic {
   children Topic[] @relation("TopicHierarchy")
 
   questions Question[]
-
   createdAt DateTime @default(now())
 }
 
@@ -552,5 +568,4 @@ model Message {
 
   @@index([conversationId])
 }
-
 
