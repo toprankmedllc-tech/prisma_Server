@@ -20,6 +20,7 @@ import { GenerateQuestionsDto, ReviewQuestionDto, CreateQualityReviewDto, Unpubl
 import { GenerateQuestionsResponseDto, QuestionResponseDto, QuestionDetailDto, ReviewDashboardItemDto } from './dto/response.dto';
 import { ApiQuery, ApiCookieAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { QuestionQueueService } from '../question-queue/question-queue.service';
 
 interface RequestWithUser extends Request {
     user: {
@@ -38,15 +39,78 @@ export class QuestionsController {
     constructor(
         private readonly questionsService: QuestionsService,
         private readonly questionGenerationService: QuestionGenerationService,
+        private readonly questionQueueService: QuestionQueueService,
     ) { }
 
    
 
     @Post('generate')
     @HttpCode(HttpStatus.CREATED)
-    @ApiOperation({ summary: 'Generate AI questions', description: 'Uses RAG (ChromaDB + LLM) to generate USMLE-style questions based on topic, difficulty, and question type. Returns newly created questions.' })
+    @ApiOperation({ summary: '(Deprecated) Generate AI questions synchronously', description: 'Uses RAG (ChromaDB + LLM) to generate USMLE-style questions based on topic, difficulty, and question type. This endpoint blocks until generation is complete. For large generation, use the async endpoint instead.' })
     async generateQuestions(@Body() dto: GenerateQuestionsDto): Promise<GenerateQuestionsResponseDto> {
         return this.questionGenerationService.generateQuestions(dto);
+    }
+
+    // ============================================
+    // ASYNC QUESTION GENERATION (queue-based)
+    // ============================================
+    @Post('generate-async')
+    @HttpCode(HttpStatus.ACCEPTED)
+    @ApiOperation({
+        summary: 'Queue AI question generation (async)',
+        description: 'Queues a question generation job in the background using BullMQ. Returns a job ID immediately. The frontend can use Socket.IO to listen for completion events on "generation:completed" with the jobId and generated question IDs.',
+    })
+    async generateQuestionsAsync(
+        @Req() req: RequestWithUser,
+        @Body() dto: GenerateQuestionsDto,
+    ): Promise<{
+        jobId: string;
+        status: string;
+        message: string;
+    }> {
+        return this.questionQueueService.queueGeneration(dto, req.user.id);
+    }
+    // ============================================
+    // GET QUEUE JOB STATUS
+    // ============================================
+    @Get('generate-async/:jobId')
+    @ApiOperation({
+        summary: 'Get generation job status',
+        description: 'Returns the current status of an async question generation job. Use this to poll for status if not using Socket.IO.',
+    })
+    async getGenerationJobStatus(
+        @Param('jobId') jobId: string,
+    ): Promise<{
+        id: string;
+        status: string;
+        params: any;
+        questionIds: string[];
+        questionCount: number;
+        errorMessage: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+    } | null> {
+        return this.questionQueueService.getJobStatus(jobId);
+    }
+    // ============================================
+    // GET USER'S GENERATION JOBS
+    // ============================================
+    @Get('generate-async/jobs/mine')
+    @ApiOperation({
+        summary: 'Get my generation jobs',
+        description: 'Returns the current user\'s recent question generation jobs, ordered by most recent first.',
+    })
+    async getMyGenerationJobs(
+        @Req() req: RequestWithUser,
+    ): Promise<Array<{
+        id: string;
+        status: string;
+        questionCount: number;
+        questionIds: string[];
+        errorMessage: string | null;
+        createdAt: Date;
+    }>> {
+        return this.questionQueueService.getUserJobs(req.user.id);
     }
 
     // ============================================
@@ -359,4 +423,6 @@ export class QuestionsController {
     }> {
         return this.questionsService.getQuestionStats();
     }
+
+    // ... rest of the existing controller methods ...
 }

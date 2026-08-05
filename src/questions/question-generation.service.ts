@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LLMService } from '../llm/llm.service';
 import { ChromaService } from '../chroma/chroma.service';
+import type { QueryResult } from '../chroma/chroma.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { GenerateQuestionsDto, QuestionSourceType } from './dto/request.dto';
 import { QuestionResponseDto } from './dto/response.dto';
@@ -79,52 +80,94 @@ export class QuestionGenerationService {
     ) { }
 
     async generateQuestions(dto: GenerateQuestionsDto) {
-        // Step 1: Build a rich query for Chroma DB
-        const queryText = this.buildChromaQuery(dto);
-        this.logger.log(`Querying Chroma with: "${queryText}"`);
+        try {
+            // Step 1: Build a rich query for Chroma DB
+            const queryText = this.buildChromaQuery(dto);
+            this.logger.log(`Querying Chroma with: "${queryText}"`);
 
-        const retrievedChunks = await this.chromaService.query(queryText, 10);
+            let retrievedChunks: QueryResult[];
+            try {
+                retrievedChunks = await this.chromaService.query(queryText, 10);
+            } catch (chromaError: any) {
+                this.logger.error(`ChromaDB query failed: ${chromaError.message}`);
+                throw new Error(
+                    `Failed to query ChromaDB: ${chromaError.message}. Please check the ChromaDB connection.`,
+                );
+            }
 
-        if (!retrievedChunks.length) {
-            throw new Error(
-                `No relevant medical content found for topic: "${dto.topic}". Please ingest training data first.`,
-            );
-        }
+            if (!retrievedChunks.length) {
+                throw new Error(
+                    `No relevant medical content found for topic: "${dto.topic}". Please ingest training data first.`,
+                );
+            }
 
-        const context = retrievedChunks
-            .map((chunk, index) => `[Source ${index + 1}]:\n${chunk.content}`)
-            .join('\n\n');
+            const context = retrievedChunks
+                .map((chunk, index) => `[Source ${index + 1}]:\n${chunk.content}`)
+                .join('\n\n');
 
         this.logger.log(`Retrieved ${retrievedChunks.length} chunks for context`);
 
-        // Step 2: Build the prompt based on question type
-        const userPrompt = this.buildUserPrompt(dto, context);
-        this.logger.log(`Generating ${dto.count} ${dto.sourceType} question(s) at ${dto.difficulty} difficulty`);
+            // Step 2: Build the prompt based on question type
+            const userPrompt = this.buildUserPrompt(dto, context);
+            this.logger.log(`Generating ${dto.count} ${dto.sourceType} question(s) at ${dto.difficulty} difficulty`);
 
-        // Step 3: Call LLM with the RAG prompt
-        const llmResponse = await this.llmService.generateWithPrompt(
-            RAG_QUESTION_SYSTEM_PROMPT,
-            userPrompt,
-            { temperature: 0.3, maxTokens: 8192, jsonMode: true },
-        );
+            // Step 3: Call LLM with the RAG prompt
+            let llmResponse: string;
+            try {
+                llmResponse = await this.llmService.generateWithPrompt(
+                    RAG_QUESTION_SYSTEM_PROMPT,
+                    userPrompt,
+                    { temperature: 0.3, maxTokens: 8192, jsonMode: true },
+                );
+            } catch (llmError: any) {
+                this.logger.error(`LLM generation failed: ${llmError.message}`);
+                throw new Error(
+                    `AI generation failed: ${llmError.message}. The LLM service may be unavailable or rate-limited.`,
+                );
+            }
 
-        // Step 4: Parse the LLM response
-        const parsedResponse = this.parseLLMResponse(llmResponse, dto.count);
+            // Step 4: Parse the LLM response
+            let parsedResponse: GeneratedRichQuestion[];
+            try {
+                parsedResponse = this.parseLLMResponse(llmResponse, dto.count);
+            } catch (parseError: any) {
+                this.logger.error(`Failed to parse LLM response: ${parseError.message}`);
+                this.logger.debug(`Raw LLM response (first 500 chars): ${llmResponse.substring(0, 500)}`);
+                throw new Error(
+                    `Failed to parse AI response: ${parseError.message}. The generated content may not be in the expected format.`,
+                );
+            }
 
-        // Step 5: Find or create the topic in PostgreSQL
-        const topic = await this.findOrCreateTopic(dto.topic);
+            // Step 5: Find or create the topic in PostgreSQL
+            let topic: any;
+            try {
+                topic = await this.findOrCreateTopic(dto.topic);
+            } catch (dbError: any) {
+                this.logger.error(`Database error finding/creating topic: ${dbError.message}`);
+                throw new Error(`Database error: ${dbError.message}`);
+            }
 
-        // Step 6: Save questions to PostgreSQL
-        const savedQuestions = await this.saveRichQuestions(parsedResponse, topic.id, dto.sourceType);
+            // Step 6: Save questions to PostgreSQL
+            let savedQuestions: QuestionResponseDto[];
+            try {
+                savedQuestions = await this.saveRichQuestions(parsedResponse, topic.id, dto.sourceType);
+            } catch (saveError: any) {
+                this.logger.error(`Failed to save questions to database: ${saveError.message}`);
+                throw new Error(`Failed to save generated questions: ${saveError.message}`);
+            }
 
-        // Step 7: Format response
-        return {
-            success: true,
-            message: `Successfully generated ${savedQuestions.length} ${dto.sourceType} question(s)`,
-            questions: savedQuestions,
-            sourceType: dto.sourceType,
-            tokenUsage: undefined,
-        };
+            // Step 7: Format response
+            return {
+                success: true,
+                message: `Successfully generated ${savedQuestions.length} ${dto.sourceType} question(s)`,
+                questions: savedQuestions,
+                sourceType: dto.sourceType,
+                tokenUsage: undefined,
+            };
+        } catch (error: any) {
+            this.logger.error(`Question generation failed: ${error.message}`);
+            throw error; // Re-throw for the global exception filter to handle
+        }
     }
 
     // ============================================

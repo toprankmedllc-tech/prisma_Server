@@ -1,12 +1,35 @@
 import 'dotenv/config';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
+
+  // Global unhandled rejection handler — prevents server crash on unhandled promises
+  process.on('unhandledRejection', (reason, promise) => {
+    logger.error(
+      `Unhandled Promise Rejection: ${reason instanceof Error ? reason.message : reason}`,
+      reason instanceof Error ? reason.stack : undefined,
+    );
+  });
+
+  // Global uncaught exception handler — prevents server crash on sync errors
+  process.on('uncaughtException', (error) => {
+    logger.error(
+      `Uncaught Exception: ${error.message}`,
+      error.stack,
+    );
+    // Don't exit — let the server continue running
+  });
+
   const app = await NestFactory.create(AppModule);
+
+  // Apply global exception filter — catches ALL exceptions and returns proper HTTP responses
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   // Cookie parser middleware for reading cookies
   app.use(cookieParser());
@@ -16,7 +39,7 @@ async function bootstrap() {
     'https://staging-test.toprankmd.com',
     'https://usmle-review.vercel.app',
     'http://localhost:3000',
-    'http://localhost:3001',     // adding this here for cors error check 
+    'http://localhost:4000',     // adding this here for cors error check 
   ];
 
   app.enableCors({

@@ -241,6 +241,31 @@ model QualityReview {
   updatedAt  DateTime @updatedAt
 }
 
+// ============================================
+// GENERATION JOB MODEL (for async background question generation)
+// ============================================
+model GenerationJob {
+  id String @id @default(cuid())
+
+  userId String? // User who triggered the generation
+
+  // The generation parameters as JSON (GenerateQuestionsDto)
+  params Json
+
+  status String @default("queued")
+
+  // Generated question IDs (if completed)
+  questionIds String[] @default([])
+
+  // Error message (if failed)
+  errorMessage String?
+
+  // Count of questions generated
+  questionCount Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Question {
   id String @id @default(cuid())
 
@@ -316,7 +341,6 @@ model Question {
   rejected    Boolean @default(false)
   reviewedBy  String?     // User ID of the reviewer (audit trail)
   reviewNotes Json?     // Flexible attribute-level review notes (e.g. { stem: "...", choices: { "choiceId": "..." }, explanation: "..." })
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -336,7 +360,6 @@ model QuestionAttempt {
   isCorrect Boolean
 
   timeSpentSec Int
-
   user User @relation(fields: [userId], references: [id])
 
   question Question @relation(fields: [questionId], references: [id])
@@ -396,7 +419,6 @@ model Document {
   title String
 
   content String?     // Store the original content for re-ingestion
-
   source String?
 
   fileType String?    // e.g., 'markdown', 'text', 'html', 'pdf', 'docx'
@@ -408,7 +430,6 @@ model Document {
   metadata Json?      // Store chunking config (chunkSize, overlap, strategy, etc.)
 
   chunks DocumentChunk[]
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -417,17 +438,14 @@ model DocumentChunk {
   id String @id @default(cuid())
 
   documentId String
-
   document Document @relation(fields: [documentId], references: [id])
 
   chunkIndex Int
-
   content String
 
   vectorId String?
 
   metadata Json?
-
   createdAt DateTime @default(now())
 }
 
@@ -447,7 +465,6 @@ model ExamAttempt {
   id String @id @default(cuid())
 
   examId String
-
   userId String
 
   score Float
