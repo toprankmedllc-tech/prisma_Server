@@ -54,7 +54,7 @@ export class OpenRouterProvider {
         // Client for chat completions
         this.chatClient = axios.create({
             baseURL: 'https://openrouter.ai/api/v1',
-            timeout: 60000,
+            timeout: 180000, // 3 minutes — LLM generation can take 60-120s
             headers: {
                 'Authorization': `Bearer ${this.apiKey}`,
                 'Content-Type': 'application/json',
@@ -66,7 +66,7 @@ export class OpenRouterProvider {
         // Client for embeddings
         this.embeddingClient = axios.create({
             baseURL: 'https://openrouter.ai/api/v1',
-            timeout: 60000,
+            timeout: 180000, // 3 minutes
             headers: {
                 'Authorization': `Bearer ${this.apiKey}`,
                 'Content-Type': 'application/json',

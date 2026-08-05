@@ -331,78 +331,77 @@ export class QuestionGenerationService {
     }
 
     // ============================================
-    // SAVE RICH QUESTIONS
+    // SAVE RICH QUESTIONS (now using a single transaction)
     // ============================================
     private async saveRichQuestions(
         questions: GeneratedRichQuestion[],
         topicId: string,
         sourceType: QuestionSourceType,
     ): Promise<QuestionResponseDto[]> {
-        const savedQuestions: QuestionResponseDto[] = [];
+        // Collect all unique tag names across all questions
+        const allTagNames = [...new Set(
+            questions.flatMap(q => q.tags.filter(Boolean).map(t => t.trim())),
+        )].filter(Boolean);
 
-        for (const q of questions) {
-            // Process tags - find or create each tag
-            const tagRecords = await Promise.all(
-                q.tags.map(async (tagName) => {
-                    if (!tagName || !tagName.trim()) return null;
-                    return this.prisma.tag.upsert({
-                        where: { name: tagName.trim() },
-                        create: { name: tagName.trim() },
+        // Batch upsert all tags in a single transaction
+        const tagNameToId = new Map<string, string>();
+        if (allTagNames.length > 0) {
+            await this.prisma.$transaction(
+                allTagNames.map((tagName) =>
+                    this.prisma.tag.upsert({
+                        where: { name: tagName },
+                        create: { name: tagName },
                         update: {},
-                    });
-                }),
-            ).then((results) => results.filter(Boolean));
+                    }),
+                ),
+            );
+            // Fetch all tags in one query
+            const allTags = await this.prisma.tag.findMany({
+                where: { name: { in: allTagNames } },
+            });
+            for (const tag of allTags) {
+                tagNameToId.set(tag.name, tag.id);
+            }
+        }
 
-            // Create the question with ALL rich fields
-            const question = await this.prisma.question.create({
-                data: {
-                    // === BASIC INFORMATION ===
+        // Batch create all questions in a single transaction
+        const createdQuestions = await this.prisma.$transaction(
+            questions.map((q) => {
+                const tagIds = q.tags
+                    .filter(Boolean)
+                    .map((t) => t.trim())
+                    .filter((t) => tagNameToId.has(t))
+                    .map((t) => tagNameToId.get(t)!)
+                    .filter(Boolean);
+
+                return this.prisma.question.create({
+                    data: {
                     stem: q.stem,
                     leadInQuestion: q.leadInQuestion || null,
                     explanation: q.explanation,
-
-                    // === SOURCE & METADATA ===
                     source: 'AI_GENERATED',
                     sourceType: sourceType === QuestionSourceType.BUZZWORD ? 'BUZZWORD' : 'VIGNETTE',
-
-                    // === MEDICAL CLASSIFICATION ===
                     topicId,
                     system: q.system || null,
                     discipline: q.discipline || null,
                     cognitiveLevel: this.mapCognitiveLevel(q.cognitiveLevel),
                     difficulty: this.mapDifficulty(q.difficulty),
                     trapType: q.trapType || null,
-
-                    // === CLINICAL PRESENTATION ===
                     patientProfile: q.patientProfile || null,
                     chiefComplaint: q.chiefComplaint || null,
                     keySymptoms: q.keySymptoms || [],
                     physicalExam: q.physicalExam || null,
-
-                    // === DIAGNOSTIC CLUES ===
                     mainClue: q.mainClue || null,
                     supportingClue: q.supportingClue || null,
-
-                    // === ANSWER ===
                     correctAnswerLetter: q.correctAnswerLetter || null,
                     correctAnswerText: q.correctAnswerText || null,
-
-                    // === DETAILED EXPLANATIONS ===
                     stepByStepReasoning: q.stepByStepReasoning || null,
                     educationalObjective: q.educationalObjective || null,
-
-                    // === BUZZWORD SPECIFIC ===
                     buzzwords: q.buzzwords || [],
                     buzzwordCombinationCorrect: q.buzzwordCombinationCorrect || null,
-
-                    // === TAGS & CONCEPTS ===
                     relatedConcepts: q.relatedConcepts || [],
-
-                    // === PUBLICATION STATUS ===
                     isPublished: false,
                     reviewed: false,
-
-                    // === RELATIONS ===
                     choices: {
                         create: q.choices.map((choice) => ({
                             letter: choice.letter,
@@ -417,12 +416,14 @@ export class QuestionGenerationService {
                             text: wo.text,
                             explanation: wo.explanation || '',
                             buzzwordCombo: wo.buzzwordCombo || null,
-                            order: q.choices.findIndex((c) => c.letter === wo.letter),
-                        })),
-                    },
-                    vitals: q.vitals
-                        ? {
-                            create: {
+                                order: q.choices.findIndex((c) => c.letter === wo.letter) >= 0
+                                    ? q.choices.findIndex((c) => c.letter === wo.letter)
+                                    : 0,
+                            })),
+                        },
+                        vitals: q.vitals
+                            ? {
+                                create: {
                                 bloodPressure: q.vitals.bloodPressure || null,
                                 heartRate: q.vitals.heartRate || null,
                                 pulseOximetry: q.vitals.pulseOximetry || null,
@@ -432,8 +433,8 @@ export class QuestionGenerationService {
                         }
                         : undefined,
                     tags: {
-                        create: tagRecords.map((tag) => ({
-                            tagId: tag!.id,
+                            create: tagIds.map((tagId) => ({
+                                tagId,
                         })),
                     },
                 },
@@ -445,8 +446,12 @@ export class QuestionGenerationService {
                     topic: true,
                 },
             });
+            }),
+        );
 
-            savedQuestions.push({
+        const savedQuestions = createdQuestions.map((question) => {
+            this.logger.debug(`Saved question: ${question.stem.substring(0, 60)}...`);
+            return {
                 id: question.id,
                 stem: question.stem,
                 explanation: question.explanation,
@@ -462,12 +467,10 @@ export class QuestionGenerationService {
                 tags: question.tags.map((qt) => qt.tag.name),
                 isPublished: question.isPublished,
                 createdAt: question.createdAt,
-            });
+            };
+        });
 
-            this.logger.debug(`Saved question: ${q.stem.substring(0, 60)}...`);
-        }
-
-        this.logger.log(`Successfully saved ${savedQuestions.length} questions to database`);
+        this.logger.log(`Successfully saved ${savedQuestions.length} questions to database (batched)`);
         return savedQuestions;
     }
 

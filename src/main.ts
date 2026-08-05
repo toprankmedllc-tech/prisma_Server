@@ -57,6 +57,14 @@ async function bootstrap() {
 
   SwaggerModule.setup('api', app, document);
 
+  // Prevent premature timeout on long-running requests (e.g., AI question generation
+  // which can take 90+ seconds). Node's default server timeout is 0 (no timeout),
+  // but we explicitly raise it to be safe (~5 minutes).
+  const server = app.getHttpServer();
+  server.setTimeout(300000);          // 5 minutes socket timeout
+  server.requestTimeout = 300000;     // 5 minutes request timeout
+  server.keepAliveTimeout = 65000;    // keep-alive for long requests (>60s)
+
   await app.listen(4000);
 }
 
