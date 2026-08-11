@@ -50,55 +50,6 @@ export class DashboardSummaryDto {
 }
 
 // ============================================
-// USER DETAILS
-// ============================================
-export class UserReviewStatsDto {
-    @ApiProperty({ description: 'User ID' })
-    id!: string;
-
-    @ApiProperty({ description: 'User email' })
-    email!: string;
-
-    @ApiProperty({ description: 'User first name' })
-    firstName!: string | null;
-
-    @ApiProperty({ description: 'User last name' })
-    lastName!: string | null;
-
-    @ApiProperty({ description: 'User role' })
-    role!: string;
-
-    @ApiProperty({ description: 'Number of questions reviewed by this user' })
-    reviewedCount!: number;
-
-    @ApiProperty({ description: 'Number of questions skipped by this user' })
-    skippedCount!: number;
-
-    @ApiProperty({ description: 'Number of questions currently assigned to this user' })
-    assignedCount!: number;
-
-    @ApiProperty({ description: 'Number of approved questions by this user' })
-    approvedCount!: number;
-
-    @ApiProperty({ description: 'Number of rejected questions by this user' })
-    rejectedCount!: number;
-
-    @ApiProperty({ description: 'Whether the user is active' })
-    isActive!: boolean;
-
-    @ApiProperty({ description: 'When the user joined' })
-    createdAt!: Date;
-}
-
-export class UserReviewStatsListDto {
-    @ApiProperty({ type: [UserReviewStatsDto], description: 'List of users with their review stats' })
-    users!: UserReviewStatsDto[];
-
-    @ApiProperty({ description: 'Total number of users' })
-    total!: number;
-}
-
-// ============================================
 // REVIEW ACTIVITY
 // ============================================
 export class ReviewActivityDto {
@@ -175,6 +126,55 @@ export class TopicOptionDto {
 }
 
 // ============================================
+// USER REVIEW STATS (per-user table)
+// ============================================
+export class UserReviewStatsDto {
+    @ApiProperty({ description: 'User ID' })
+    id!: string;
+
+    @ApiProperty({ description: 'User email' })
+    email!: string;
+
+    @ApiProperty({ description: 'User first name' })
+    firstName!: string | null;
+
+    @ApiProperty({ description: 'User last name' })
+    lastName!: string | null;
+
+    @ApiProperty({ description: 'User role' })
+    role!: string;
+
+    @ApiProperty({ description: 'Number of reviewed questions' })
+    reviewedCount!: number;
+
+    @ApiProperty({ description: 'Number of skipped questions' })
+    skippedCount!: number;
+
+    @ApiProperty({ description: 'Number of assigned questions' })
+    assignedCount!: number;
+
+    @ApiProperty({ description: 'Number of approved questions' })
+    approvedCount!: number;
+
+    @ApiProperty({ description: 'Number of rejected questions' })
+    rejectedCount!: number;
+
+    @ApiProperty({ description: 'Whether the user is active' })
+    isActive!: boolean;
+
+    @ApiProperty({ description: 'When the user joined' })
+    createdAt!: Date;
+}
+
+export class UserReviewStatsListDto {
+    @ApiProperty({ type: [UserReviewStatsDto], description: 'List of users with review stats' })
+    users!: UserReviewStatsDto[];
+
+    @ApiProperty({ description: 'Total number of users' })
+    total!: number;
+}
+
+// ============================================
 // UPDATE USER ROLE
 // ============================================
 export class UpdateUserRoleDto {
@@ -193,4 +193,121 @@ export class UpdateUserRoleResponseDto {
 
     @ApiProperty({ description: 'New role assigned' })
     newRole!: string;
+}
+
+// ============================================
+// USER DETAIL (with reviewed questions)
+// ============================================
+export class UserDetailDto {
+    @ApiProperty({ description: 'User ID' })
+    id!: string;
+
+    @ApiProperty({ description: 'User email' })
+    email!: string;
+
+    @ApiProperty({ description: 'User first name' })
+    firstName!: string | null;
+
+    @ApiProperty({ description: 'User last name' })
+    lastName!: string | null;
+
+    @ApiProperty({ description: 'User role' })
+    role!: string;
+
+    @ApiProperty({ description: 'Student type' })
+    studentType!: string | null;
+
+    @ApiProperty({ description: 'Target exam' })
+    targetExam!: string | null;
+
+    @ApiProperty({ description: 'Target test date' })
+    targetTestDate!: Date | null;
+
+    @ApiProperty({ description: 'Whether the user is active' })
+    isActive!: boolean;
+
+    @ApiProperty({ description: 'When the user joined' })
+    createdAt!: Date;
+
+    @ApiProperty({ description: 'When the user was last updated' })
+    updatedAt!: Date;
+
+    @ApiProperty({ description: 'Number of reviewed questions' })
+    reviewedCount!: number;
+
+    @ApiProperty({ description: 'Number of skipped questions' })
+    skippedCount!: number;
+
+    @ApiProperty({ description: 'Number of assigned questions' })
+    assignedCount!: number;
+}
+
+export class UserReviewedQuestionDetailDto {
+    @ApiProperty({ description: 'Question ID' })
+    id!: string;
+
+    @ApiProperty({ description: 'Question stem' })
+    stem!: string;
+
+    @ApiProperty({ description: 'Question difficulty' })
+    difficulty!: string;
+
+    @ApiProperty({ description: 'Question source type' })
+    sourceType!: string | null;
+
+    @ApiProperty({ description: 'Topic name' })
+    topic!: string;
+
+    @ApiProperty({ description: 'Subject name' })
+    subject!: string;
+
+    @ApiProperty({ description: 'Whether the question is reviewed' })
+    reviewed!: boolean;
+
+    @ApiProperty({ description: 'Whether the question is rejected' })
+    rejected!: boolean;
+
+    @ApiProperty({ description: 'Whether the question is published' })
+    isPublished!: boolean;
+
+    @ApiProperty({ description: 'Review notes' })
+    reviewNotes!: Record<string, any> | null;
+
+    @ApiProperty({ description: 'Reviewed by user ID' })
+    reviewedBy!: string | null;
+
+    @ApiProperty({ description: 'When the question was created' })
+    createdAt!: Date;
+
+    @ApiProperty({ description: 'When the question was last updated' })
+    updatedAt!: Date;
+
+    @ApiProperty({ description: 'Quality review medical accuracy' })
+    qualityMedicalAccuracy!: string | null;
+
+    @ApiProperty({ description: 'Quality review USMLE style' })
+    qualityUsmleStyle!: string | null;
+
+    @ApiProperty({ description: 'Quality review explanation quality' })
+    qualityExplanationQuality!: string | null;
+
+    @ApiProperty({ description: 'Quality review originality' })
+    qualityOriginality!: string | null;
+
+    @ApiProperty({ description: 'Quality review grammar' })
+    qualityGrammar!: string | null;
+
+    @ApiProperty({ description: 'Quality review vignette review' })
+    qualityVignetteReview!: string | null;
+
+    @ApiProperty({ description: 'Quality review buzzword review' })
+    qualityBuzzwordReview!: string | null;
+}
+
+export class UserDetailResponseDto {
+    @ApiProperty({ description: 'User details' })
+    user!: UserDetailDto;
+
+    @ApiProperty({ type: [UserReviewedQuestionDetailDto], description: 'List of reviewed questions with review details' })
+    reviewedQuestions!: UserReviewedQuestionDetailDto[];
 }

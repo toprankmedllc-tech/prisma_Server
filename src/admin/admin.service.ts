@@ -11,6 +11,9 @@ import {
     QuestionBreakdownDto,
     UpdateUserRoleDto,
     UpdateUserRoleResponseDto,
+    UserDetailResponseDto,
+    UserDetailDto,
+    UserReviewedQuestionDetailDto,
 } from './dto/admin.dto';
 
 @Injectable()
@@ -146,6 +149,84 @@ export class AdminService {
         return {
             users: userReviewStats,
             total: userReviewStats.length,
+        };
+    }
+
+    // ============================================
+    // USER DETAIL: Full profile + reviewed questions with review details
+    // ============================================
+    async getUserDetail(userId: string): Promise<UserDetailResponseDto> {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+        });
+
+        if (!user) {
+            throw new NotFoundException(`User with ID "${userId}" not found`);
+        }
+
+        const userDetail: UserDetailDto = {
+            id: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: user.role,
+            studentType: user.studentType || null,
+            targetExam: user.targetExam || null,
+            targetTestDate: user.targetTestDate || null,
+            isActive: user.isActive,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+            reviewedCount: user.reviewedQuestions.length,
+            skippedCount: user.skippedQuestions.length,
+            assignedCount: user.assignedQuestions.length,
+        };
+
+        // Fetch reviewed questions in the order they were reviewed (most recent first)
+        const reviewedIds = [...user.reviewedQuestions].reverse();
+
+        let reviewedQuestions: UserReviewedQuestionDetailDto[] = [];
+        if (reviewedIds.length > 0) {
+            const questions = await this.prisma.question.findMany({
+                where: { id: { in: reviewedIds } },
+                include: {
+                    topic: {
+                        include: { subject: true },
+                    },
+                    qualityReview: true,
+                },
+            });
+
+            // Maintain the order of the user's reviewed list
+            const idOrder = new Map(reviewedIds.map((id, index) => [id, index]));
+            questions.sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
+
+            reviewedQuestions = questions.map((q) => ({
+                id: q.id,
+                stem: q.stem,
+                difficulty: q.difficulty,
+                sourceType: q.sourceType,
+                topic: q.topic.name,
+                subject: q.topic.subject.name,
+                reviewed: q.reviewed,
+                rejected: q.rejected,
+                isPublished: q.isPublished,
+                reviewNotes: q.reviewNotes as Record<string, any> | null,
+                reviewedBy: q.reviewedBy,
+                createdAt: q.createdAt,
+                updatedAt: q.updatedAt,
+                qualityMedicalAccuracy: q.qualityReview?.medicalAccuracy ?? null,
+                qualityUsmleStyle: q.qualityReview?.usmleStyle ?? null,
+                qualityExplanationQuality: q.qualityReview?.explanationQuality ?? null,
+                qualityOriginality: q.qualityReview?.originality ?? null,
+                qualityGrammar: q.qualityReview?.grammar ?? null,
+                qualityVignetteReview: q.qualityReview?.vignetteReview ?? null,
+                qualityBuzzwordReview: q.qualityReview?.buzzwordReview ?? null,
+            }));
+        }
+
+        return {
+            user: userDetail,
+            reviewedQuestions,
         };
     }
 

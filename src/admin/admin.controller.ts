@@ -26,6 +26,7 @@ import {
     TopicOptionDto,
     UpdateUserRoleDto,
     UpdateUserRoleResponseDto,
+    UserDetailResponseDto,
 } from './dto/admin.dto';
 import { QuestionsService } from '../questions/questions.service';
 import { QuestionGenerationService } from '../questions/question-generation.service';
@@ -242,6 +243,21 @@ export class AdminController {
         @Body() dto: UpdateUserRoleDto,
     ): Promise<UpdateUserRoleResponseDto> {
         return this.adminService.updateUserRole(id, dto);
+    }
+
+    // ============================================
+    // USER DETAIL: Full profile + reviewed questions
+    // ============================================
+    @Get('users/:id/detail')
+    @ApiOperation({
+        summary: 'Get user detail with reviewed questions',
+        description:
+            'Returns full user profile information along with a list of all questions the user has reviewed, including review notes and quality review data.',
+    })
+    async getUserDetail(
+        @Param('id') id: string,
+    ): Promise<UserDetailResponseDto> {
+        return this.adminService.getUserDetail(id);
     }
 
     // ============================================
