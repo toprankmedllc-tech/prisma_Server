@@ -77,6 +77,11 @@ enum CognitiveLevel {
   ANALYSIS
 }
 
+enum AiReviewVerdict {
+  PASS
+  FAIL
+}
+
 model User {
   id String @id @default(cuid())
 
@@ -242,6 +247,48 @@ model QualityReview {
 }
 
 // ============================================
+// AI REVIEW MODEL (for automated quality review)
+// ============================================
+model AiReview {
+  id String @id @default(cuid())
+
+  questionId String @unique
+  question   Question @relation(fields: [questionId], references: [id])
+
+  // Overall verdict
+  verdict AiReviewVerdict
+
+  // Structured scores (0-100)
+  usmleStyleScore         Int?
+  medicalAccuracyScore    Int?
+  hallucinationRiskScore  Int?    // Higher = more hallucination risk
+  explanationQualityScore Int?
+  clinicalRelevanceScore  Int?
+  grammaticalQualityScore Int?
+
+  // Detailed feedback
+  usmleStyleFeedback         String?  // Free-text
+  medicalAccuracyFeedback    String?
+  hallucinationDetails       String?  // Specific hallucination claims
+  explanationQualityFeedback String?
+  clinicalRelevanceFeedback  String?
+  grammaticalFeedback        String?
+  generalFeedback            String?  // Overall assessment
+
+  // Metadata
+  reviewedByAi      String?   // Which model was used (e.g., "deepseek/deepseek-v4-flash")
+  tokenUsage        Int?      // Tokens used for this review
+  reviewDurationMs  Int?      // How long the review took
+
+  // If FAILED: what was the action taken
+  replacementQuestionId String?  // If a new question was generated to replace this one
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ai_reviews")
+}
+
+// ============================================
 // GENERATION JOB MODEL (for async background question generation)
 // ============================================
 model GenerationJob {
@@ -329,7 +376,7 @@ model Question {
   wrongOptions  WrongOption[]
   vitals        Vitals?
   qualityReview QualityReview?
-
+  aiReview      AiReview?
   references QuestionReference[]
 
   tags QuestionTag[]
@@ -382,7 +429,6 @@ model Reference {
   id String @id @default(cuid())
 
   title String
-
   source String
 
   url String?
@@ -585,4 +631,5 @@ model Message {
 
   @@index([conversationId])
 }
+
 

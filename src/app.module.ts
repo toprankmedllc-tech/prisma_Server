@@ -12,6 +12,7 @@ import configuration from './config/configuration';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { AdminModule } from './admin/admin.module';
 import { QuestionQueueModule } from './question-queue/question-queue.module';
+import { AiReviewModule } from './ai-review/ai-review.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { QuestionQueueModule } from './question-queue/question-queue.module';
     DashboardModule,
     AdminModule,
     QuestionQueueModule,
+    AiReviewModule,
   ],
 })
 export class AppModule { }

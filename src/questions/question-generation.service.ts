@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { LLMService } from '../llm/llm.service';
 import { ChromaService } from '../chroma/chroma.service';
 import type { QueryResult } from '../chroma/chroma.service';
@@ -10,6 +10,8 @@ import {
     BUZZWORD_QUESTION_USER_PROMPT,
     VIGNETTE_QUESTION_USER_PROMPT,
 } from '../llm/prompts/rag-question.prompt';
+import { AiReviewService } from '../ai-review/ai-review.service';
+// import { AiReviewService } from '../ai-review/ai-review.service';s
 
 // ============================================
 // INTERFACES
@@ -77,6 +79,8 @@ export class QuestionGenerationService {
         private llmService: LLMService,
         private chromaService: ChromaService,
         private prisma: PrismaService,
+        @Inject(forwardRef(() => AiReviewService))
+        private aiReviewService: AiReviewService,
     ) { }
 
     async generateQuestions(dto: GenerateQuestionsDto) {
@@ -105,7 +109,7 @@ export class QuestionGenerationService {
                 .map((chunk, index) => `[Source ${index + 1}]:\n${chunk.content}`)
                 .join('\n\n');
 
-        this.logger.log(`Retrieved ${retrievedChunks.length} chunks for context`);
+            this.logger.log(`Retrieved ${retrievedChunks.length} chunks for context`);
 
             // Step 2: Build the prompt based on question type
             const userPrompt = this.buildUserPrompt(dto, context);
@@ -156,7 +160,10 @@ export class QuestionGenerationService {
                 throw new Error(`Failed to save generated questions: ${saveError.message}`);
             }
 
-            // Step 7: Format response
+            // Step 7: Queue AI review for each generated question (fire-and-forget)
+            this.queueAiReviewsForQuestions(savedQuestions);
+
+            // Step 8: Format response
             return {
                 success: true,
                 message: `Successfully generated ${savedQuestions.length} ${dto.sourceType} question(s)`,
@@ -167,6 +174,27 @@ export class QuestionGenerationService {
         } catch (error: any) {
             this.logger.error(`Question generation failed: ${error.message}`);
             throw error; // Re-throw for the global exception filter to handle
+        }
+    }
+
+    // ============================================
+    // QUEUE AI REVIEWS FOR GENERATED QUESTIONS
+    // ============================================
+    private async queueAiReviewsForQuestions(questions: QuestionResponseDto[]): Promise<void> {
+        if (!questions || questions.length === 0) return;
+
+        this.logger.log(`Queueing AI review for ${questions.length} newly generated question(s)`);
+
+        for (const question of questions) {
+            try {
+                await this.aiReviewService.queueAiReviewForQuestion(question.id, {
+                    autoPublish: true,
+                    autoRegenerate: true,
+                });
+            } catch (error: any) {
+                // Non-blocking: if queueing fails, don't fail the generation
+                this.logger.warn(`Failed to queue AI review for question ${question.id}: ${error.message}`);
+            }
         }
     }
 
@@ -237,7 +265,6 @@ export class QuestionGenerationService {
     // PARSE LLM RESPONSE
     // ============================================
     private parseLLMResponse(content: string, expectedCount: number): GeneratedRichQuestion[] {
-        // Remove any markdown code blocks if present
         let cleanedContent = content.trim();
 
         if (cleanedContent.startsWith('```json')) {
@@ -251,7 +278,6 @@ export class QuestionGenerationService {
         try {
             parsed = JSON.parse(cleanedContent);
         } catch (error: any) {
-            // Try to extract JSON object
             const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 try {
@@ -266,7 +292,6 @@ export class QuestionGenerationService {
             }
         }
 
-        // Extract questions from the response
         let questions: GeneratedRichQuestion[];
         if (parsed.questions && Array.isArray(parsed.questions)) {
             questions = parsed.questions;
@@ -276,7 +301,6 @@ export class QuestionGenerationService {
             throw new Error('LLM response does not contain a "questions" array');
         }
 
-        // Validate
         if (questions.length === 0) {
             throw new Error('No questions generated');
         }
@@ -285,10 +309,8 @@ export class QuestionGenerationService {
             this.logger.warn(`Expected ${expectedCount} questions but got ${questions.length}`);
         }
 
-        // Validate each question has required fields
         for (let i = 0; i < questions.length; i++) {
             const q = questions[i];
-
             if (!q.stem || typeof q.stem !== 'string') {
                 throw new Error(`Question ${i + 1}: Missing or invalid "stem"`);
             }
@@ -302,29 +324,17 @@ export class QuestionGenerationService {
                 throw new Error(`Question ${i + 1}: Missing or invalid "correctAnswerLetter"`);
             }
 
-            // Validate correctAnswerLetter matches a choice
-            const correctChoice = q.choices.find(
-                (c) => c.letter === q.correctAnswerLetter,
-            );
+            const correctChoice = q.choices.find((c) => c.letter === q.correctAnswerLetter);
             if (!correctChoice) {
-                throw new Error(
-                    `Question ${i + 1}: correctAnswerLetter "${q.correctAnswerLetter}" does not match any choice letter`,
-                );
+                throw new Error(`Question ${i + 1}: correctAnswerLetter "${q.correctAnswerLetter}" does not match any choice letter`);
             }
 
-            // Ensure correct choice is marked as isCorrect
             const correctChoices = q.choices.filter((c) => c.isCorrect);
             if (correctChoices.length !== 1) {
-                // Auto-correct: set the one matching correctAnswerLetter
-                q.choices.forEach((c) => {
-                    c.isCorrect = c.letter === q.correctAnswerLetter;
-                });
+                q.choices.forEach((c) => { c.isCorrect = c.letter === q.correctAnswerLetter; });
             }
 
-            // Ensure wrongOptions exist for all incorrect choices
-            if (!Array.isArray(q.wrongOptions)) {
-                q.wrongOptions = [];
-            }
+            if (!Array.isArray(q.wrongOptions)) { q.wrongOptions = []; }
             const incorrectChoices = q.choices.filter((c) => !c.isCorrect);
             for (const ic of incorrectChoices) {
                 const existing = q.wrongOptions.find((wo) => wo.letter === ic.letter);
@@ -338,27 +348,11 @@ export class QuestionGenerationService {
                 }
             }
 
-            // Ensure tags is an array
-            if (!Array.isArray(q.tags)) {
-                q.tags = [];
-            }
+            if (!Array.isArray(q.tags)) { q.tags = []; }
+            if (!Array.isArray(q.keySymptoms)) { q.keySymptoms = []; }
+            if (!Array.isArray(q.relatedConcepts)) { q.relatedConcepts = []; }
+            if (!Array.isArray(q.buzzwords)) { q.buzzwords = []; }
 
-            // Ensure keySymptoms is an array
-            if (!Array.isArray(q.keySymptoms)) {
-                q.keySymptoms = [];
-            }
-
-            // Ensure relatedConcepts is an array
-            if (!Array.isArray(q.relatedConcepts)) {
-                q.relatedConcepts = [];
-            }
-
-            // Ensure buzzwords is an array
-            if (!Array.isArray(q.buzzwords)) {
-                q.buzzwords = [];
-            }
-
-            // Normalize cognitiveLevel
             if (q.cognitiveLevel) {
                 const normalized = q.cognitiveLevel.toUpperCase().trim();
                 if (['RECALL', 'APPLICATION', 'CLINICAL_REASONING', 'ANALYSIS'].includes(normalized)) {
@@ -373,21 +367,14 @@ export class QuestionGenerationService {
         return questions;
     }
 
-    // ============================================
-    // SAVE RICH QUESTIONS (now using a single transaction)
-    // ============================================
     private async saveRichQuestions(
         questions: GeneratedRichQuestion[],
         topicId: string,
         sourceType: QuestionSourceType,
     ): Promise<QuestionResponseDto[]> {
-        // Collect all unique tag names across all questions
-        const allTagNames = [...new Set(
-            questions.flatMap(q => q.tags.filter(Boolean).map(t => t.trim())),
-        )].filter(Boolean);
-
-        // Batch upsert all tags in a single transaction
+        const allTagNames = [...new Set(questions.flatMap(q => q.tags.filter(Boolean).map(t => t.trim())))].filter(Boolean);
         const tagNameToId = new Map<string, string>();
+
         if (allTagNames.length > 0) {
             await this.prisma.$transaction(
                 allTagNames.map((tagName) =>
@@ -398,162 +385,58 @@ export class QuestionGenerationService {
                     }),
                 ),
             );
-            // Fetch all tags in one query
-            const allTags = await this.prisma.tag.findMany({
-                where: { name: { in: allTagNames } },
-            });
-            for (const tag of allTags) {
-                tagNameToId.set(tag.name, tag.id);
-            }
+            const allTags = await this.prisma.tag.findMany({ where: { name: { in: allTagNames } } });
+            for (const tag of allTags) { tagNameToId.set(tag.name, tag.id); }
         }
 
-        // Batch create all questions in a single transaction
         const createdQuestions = await this.prisma.$transaction(
             questions.map((q) => {
-                const tagIds = q.tags
-                    .filter(Boolean)
-                    .map((t) => t.trim())
-                    .filter((t) => tagNameToId.has(t))
-                    .map((t) => tagNameToId.get(t)!)
-                    .filter(Boolean);
-
+                const tagIds = q.tags.filter(Boolean).map(t => t.trim()).filter(t => tagNameToId.has(t)).map(t => tagNameToId.get(t)!).filter(Boolean);
                 return this.prisma.question.create({
                     data: {
-                    stem: q.stem,
-                    leadInQuestion: q.leadInQuestion || null,
-                    explanation: q.explanation,
-                    source: 'AI_GENERATED',
-                    sourceType: sourceType === QuestionSourceType.BUZZWORD ? 'BUZZWORD' : 'VIGNETTE',
-                    topicId,
-                    system: q.system || null,
-                    discipline: q.discipline || null,
-                    cognitiveLevel: this.mapCognitiveLevel(q.cognitiveLevel),
-                    difficulty: this.mapDifficulty(q.difficulty),
-                    trapType: q.trapType || null,
-                    patientProfile: q.patientProfile || null,
-                    chiefComplaint: q.chiefComplaint || null,
-                    keySymptoms: q.keySymptoms || [],
-                    physicalExam: q.physicalExam || null,
-                    mainClue: q.mainClue || null,
-                    supportingClue: q.supportingClue || null,
-                    correctAnswerLetter: q.correctAnswerLetter || null,
-                    correctAnswerText: q.correctAnswerText || null,
-                    stepByStepReasoning: q.stepByStepReasoning || null,
-                    educationalObjective: q.educationalObjective || null,
-                    buzzwords: q.buzzwords || [],
-                    buzzwordCombinationCorrect: q.buzzwordCombinationCorrect || null,
-                    relatedConcepts: q.relatedConcepts || [],
-                    isPublished: false,
-                    reviewed: false,
-                    choices: {
-                        create: q.choices.map((choice) => ({
-                            letter: choice.letter,
-                            text: choice.text,
-                            isCorrect: choice.isCorrect,
-                            order: choice.order,
-                        })),
+                        stem: q.stem, leadInQuestion: q.leadInQuestion || null, explanation: q.explanation,
+                        source: 'AI_GENERATED', sourceType: sourceType === QuestionSourceType.BUZZWORD ? 'BUZZWORD' : 'VIGNETTE',
+                        topicId, system: q.system || null, discipline: q.discipline || null,
+                        cognitiveLevel: this.mapCognitiveLevel(q.cognitiveLevel), difficulty: this.mapDifficulty(q.difficulty),
+                        trapType: q.trapType || null, patientProfile: q.patientProfile || null,
+                        chiefComplaint: q.chiefComplaint || null, keySymptoms: q.keySymptoms || [],
+                        physicalExam: q.physicalExam || null, mainClue: q.mainClue || null,
+                        supportingClue: q.supportingClue || null, correctAnswerLetter: q.correctAnswerLetter || null,
+                        correctAnswerText: q.correctAnswerText || null, stepByStepReasoning: q.stepByStepReasoning || null,
+                        educationalObjective: q.educationalObjective || null, buzzwords: q.buzzwords || [],
+                        buzzwordCombinationCorrect: q.buzzwordCombinationCorrect || null, relatedConcepts: q.relatedConcepts || [],
+                        isPublished: false, reviewed: false,
+                        choices: { create: q.choices.map((choice) => ({ letter: choice.letter, text: choice.text, isCorrect: choice.isCorrect, order: choice.order })) },
+                        wrongOptions: { create: q.wrongOptions.map((wo) => ({ letter: wo.letter, text: wo.text, explanation: wo.explanation || '', buzzwordCombo: wo.buzzwordCombo || null, order: q.choices.findIndex((c) => c.letter === wo.letter) >= 0 ? q.choices.findIndex((c) => c.letter === wo.letter) : 0 })) },
+                        vitals: q.vitals ? { create: { bloodPressure: q.vitals.bloodPressure || null, heartRate: q.vitals.heartRate || null, pulseOximetry: q.vitals.pulseOximetry || null, temperature: q.vitals.temperature || null, respiratoryRate: q.vitals.respiratoryRate || null } } : undefined,
+                        tags: { create: tagIds.map((tagId) => ({ tagId })) },
                     },
-                    wrongOptions: {
-                        create: q.wrongOptions.map((wo) => ({
-                            letter: wo.letter,
-                            text: wo.text,
-                            explanation: wo.explanation || '',
-                            buzzwordCombo: wo.buzzwordCombo || null,
-                                order: q.choices.findIndex((c) => c.letter === wo.letter) >= 0
-                                    ? q.choices.findIndex((c) => c.letter === wo.letter)
-                                    : 0,
-                            })),
-                        },
-                        vitals: q.vitals
-                            ? {
-                                create: {
-                                bloodPressure: q.vitals.bloodPressure || null,
-                                heartRate: q.vitals.heartRate || null,
-                                pulseOximetry: q.vitals.pulseOximetry || null,
-                                temperature: q.vitals.temperature || null,
-                                respiratoryRate: q.vitals.respiratoryRate || null,
-                            },
-                        }
-                        : undefined,
-                    tags: {
-                            create: tagIds.map((tagId) => ({
-                                tagId,
-                        })),
-                    },
-                },
-                include: {
-                    choices: { orderBy: { order: 'asc' } },
-                    tags: { include: { tag: true } },
-                    wrongOptions: { orderBy: { order: 'asc' } },
-                    vitals: true,
-                    topic: true,
-                },
-            });
+                    include: { choices: { orderBy: { order: 'asc' } }, tags: { include: { tag: true } }, wrongOptions: { orderBy: { order: 'asc' } }, vitals: true, topic: true },
+                });
             }),
         );
 
-        const savedQuestions = createdQuestions.map((question) => {
-            this.logger.debug(`Saved question: ${question.stem.substring(0, 60)}...`);
-            return {
-                id: question.id,
-                stem: question.stem,
-                explanation: question.explanation,
-                difficulty: question.difficulty,
-                source: question.source,
-                topicId: question.topicId,
-                choices: question.choices.map((c) => ({
-                    id: c.id,
-                    text: c.text,
-                    isCorrect: c.isCorrect,
-                    order: c.order,
-                })),
-                tags: question.tags.map((qt) => qt.tag.name),
-                isPublished: question.isPublished,
-                createdAt: question.createdAt,
-            };
-        });
-
-        this.logger.log(`Successfully saved ${savedQuestions.length} questions to database (batched)`);
-        return savedQuestions;
+        return createdQuestions.map((question) => ({
+            id: question.id, stem: question.stem, explanation: question.explanation,
+            difficulty: question.difficulty, source: question.source, topicId: question.topicId,
+            choices: question.choices.map((c) => ({ id: c.id, text: c.text, isCorrect: c.isCorrect, order: c.order })),
+            tags: question.tags.map((qt) => qt.tag.name), isPublished: question.isPublished, createdAt: question.createdAt,
+        }));
     }
 
-    // ============================================
-    // HELPER: Find or create topic
-    // ============================================
     private async findOrCreateTopic(topicName: string) {
-        let topic = await this.prisma.topic.findFirst({
-            where: { name: topicName },
-            include: { subject: true },
-        });
-
+        let topic = await this.prisma.topic.findFirst({ where: { name: topicName }, include: { subject: true } });
         if (!topic) {
-            let subject = await this.prisma.subject.findFirst({
-                where: { name: 'Clinical Medicine' },
-            });
-
+            let subject = await this.prisma.subject.findFirst({ where: { name: 'Clinical Medicine' } });
             if (!subject) {
-                subject = await this.prisma.subject.create({
-                    data: {
-                        name: 'Clinical Medicine',
-                        description: 'Clinical medicine topics for USMLE preparation',
-                    },
-                });
+                subject = await this.prisma.subject.create({ data: { name: 'Clinical Medicine', description: 'Clinical medicine topics for USMLE preparation' } });
             }
-
-            topic = await this.prisma.topic.create({
-                data: { name: topicName, subjectId: subject.id },
-                include: { subject: true },
-            });
-
+            topic = await this.prisma.topic.create({ data: { name: topicName, subjectId: subject.id }, include: { subject: true } });
             this.logger.log(`Created new topic: "${topicName}"`);
         }
-
         return topic;
     }
 
-    // ============================================
-    // HELPERS: Map enums
-    // ============================================
     private mapDifficulty(difficulty: string) {
         const d = difficulty.toUpperCase().trim();
         if (d === 'EASY' || d === '1') return 'EASY' as const;
