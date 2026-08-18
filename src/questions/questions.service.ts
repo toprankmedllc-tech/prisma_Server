@@ -1,7 +1,7 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { QuestionResponseDto, ReviewDashboardItemDto, QuestionDetailDto } from './dto/response.dto';
-import { CognitiveLevel, Difficulty, QuestionSource, QuestionSourceType, Tag, Topic } from '@prisma/client';
+import { CognitiveLevel, Difficulty, QuestionSource, QuestionSourceType, Tag, Topic, Prisma } from '@prisma/client';
 
 @Injectable()
 export class QuestionsService {
@@ -805,6 +805,100 @@ export class QuestionsService {
     }
 
     // ============================================
+    // Edit question and preserve an immutable pre-edit revision
+    // ============================================
+    async updateQuestion(id: string, dto: any, userId: string): Promise<QuestionDetailDto> {
+        const existing = await this.prisma.question.findUnique({
+            where: { id },
+            include: {
+                choices: { orderBy: { order: 'asc' } },
+                wrongOptions: { orderBy: { order: 'asc' } },
+                vitals: true,
+                tags: { include: { tag: true } },
+            },
+        });
+
+        if (!existing) throw new NotFoundException(`Question with ID "${id}" not found`);
+        if (!dto.reason?.trim()) throw new Error('An edit reason is required');
+        if (dto.choices && (dto.choices.length < 2 || dto.choices.filter((choice: any) => choice.isCorrect).length !== 1)) {
+            throw new Error('A question must have at least two choices and exactly one correct choice');
+        }
+
+        const snapshot = this.buildQuestionSnapshot(existing);
+        const revisionNumber = (await this.prisma.questionRevision.aggregate({
+            where: { questionId: id }, _max: { revisionNumber: true },
+        }))._max.revisionNumber ?? 0;
+
+        const scalarFields = [
+            'stem', 'leadInQuestion', 'explanation', 'topicId', 'difficulty', 'sourceType',
+            'system', 'discipline', 'patientProfile', 'chiefComplaint', 'keySymptoms',
+            'physicalExam', 'mainClue', 'supportingClue', 'correctAnswerLetter',
+            'correctAnswerText', 'stepByStepReasoning', 'educationalObjective', 'buzzwords',
+            'buzzwordCombinationCorrect', 'relatedConcepts', 'suggestedImages',
+        ];
+        const questionData: Record<string, any> = {};
+        for (const field of scalarFields) if (dto[field] !== undefined) questionData[field] = dto[field];
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            await tx.questionRevision.create({
+                data: {
+                    questionId: id,
+                    revisionNumber: revisionNumber + 1,
+                    revisionType: 'HUMAN_EDIT',
+                    snapshot: snapshot as any,
+                    reason: dto.reason.trim(),
+                    createdBy: userId,
+                },
+            });
+
+            if (dto.choices) {
+                await tx.choice.deleteMany({ where: { questionId: id } });
+                questionData.choices = { create: dto.choices.map((choice: any, index: number) => ({
+                    text: choice.text, isCorrect: choice.isCorrect, letter: String.fromCharCode(65 + index), order: index,
+                })) };
+            }
+            if (dto.wrongOptions) {
+                await tx.wrongOption.deleteMany({ where: { questionId: id } });
+                questionData.wrongOptions = { create: dto.wrongOptions.map((option: any, index: number) => ({
+                    letter: option.letter || String.fromCharCode(65 + index), text: option.text,
+                    explanation: option.explanation ?? null, buzzwordCombo: option.buzzwordCombo ?? null, order: index,
+                })) };
+            }
+            if (dto.vitals !== undefined) {
+                if (dto.vitals === null) await tx.vitals.deleteMany({ where: { questionId: id } });
+                else questionData.vitals = { upsert: { create: dto.vitals, update: dto.vitals } };
+            }
+            if (dto.tags) {
+                await tx.questionTag.deleteMany({ where: { questionId: id } });
+                const tagIds = await Promise.all(dto.tags.filter((tag: string) => tag.trim()).map((tag: string) =>
+                    tx.tag.upsert({ where: { name: tag.trim() }, create: { name: tag.trim() }, update: {} }),
+                ));
+                questionData.tags = { create: tagIds.map((tag: any) => ({ tagId: tag.id })) };
+            }
+
+            // Any edit invalidates publication and prior human/AI approval.
+            return tx.question.update({
+                where: { id },
+                data: { ...questionData, isPublished: false, reviewed: false, rejected: false, reviewedBy: null, reviewNotes: Prisma.JsonNull, qualityReview: { delete: {} } },
+                include: { topic: { include: { subject: true } }, choices: { orderBy: { order: 'asc' } }, wrongOptions: { orderBy: { order: 'asc' } }, vitals: true, qualityReview: true, tags: { include: { tag: true } } },
+            });
+        });
+
+        return this.mapToDetailDto(updated);
+    }
+
+    private buildQuestionSnapshot(question: any): Record<string, any> {
+        const { choices, wrongOptions, vitals, tags, ...fields } = question;
+        return {
+            ...fields,
+            choices: choices?.map((choice: any) => ({ text: choice.text, letter: choice.letter, isCorrect: choice.isCorrect, order: choice.order })),
+            wrongOptions,
+            vitals,
+            tags: tags?.map((entry: any) => entry.tag.name),
+        };
+    }
+
+    // ============================================
     // NEW: Review a question (approve, reject, or add notes)
     // Also tracks the question in the reviewer's reviewedQuestions list
     // ============================================
@@ -1424,6 +1518,9 @@ export class QuestionsService {
 
         if (!question) {
             throw new NotFoundException(`Question with ID "${questionId}" not found`);
+        }
+        if (!question.reviewed || question.rejected) {
+            throw new BadRequestException('The question must be approved by a human reviewer before publication review.');
         }
 
         const qualityReview = await this.prisma.qualityReview.upsert({

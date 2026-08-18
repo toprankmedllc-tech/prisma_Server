@@ -47,7 +47,7 @@ export class AiReviewController {
   @ApiOperation({
     summary: 'Review a single question with AI',
     description:
-      'Runs an AI quality review on a single question. Evaluates medical accuracy, USMLE style, hallucination risk, explanation quality, clinical relevance, and grammar. If the question PASSES, it is auto-approved. If it FAILS, a replacement question is auto-generated.',
+      'Runs an auditable AI quality review on a single question. AI review never publishes or replaces a question automatically; publication and replacement generation require separate controlled workflows.',
   })
   async reviewSingleQuestion(
     @Param('questionId') questionId: string,
@@ -173,5 +173,18 @@ export class AiReviewController {
     @Param('questionId') questionId: string,
   ): Promise<AiReviewResultDto | null> {
     return this.aiReviewService.getReviewForQuestion(questionId);
+  }
+
+  // ============================================
+  // GET COMPLETE AI REVIEW HISTORY FOR A QUESTION
+  // ============================================
+  @Get('questions/:questionId/ai-review/history')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({
+    summary: 'Get all AI review attempts for a question',
+    description: 'Returns every preserved AI review attempt, newest first.',
+  })
+  async getReviewHistory(@Param('questionId') questionId: string): Promise<AiReviewResultDto[]> {
+    return this.aiReviewService.getReviewHistory(questionId);
   }
 }

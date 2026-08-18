@@ -132,6 +132,24 @@ export class AiReviewResultDto {
   @ApiPropertyOptional({ description: 'Replacement question ID (if FAIL + auto-regenerate)' })
   replacementQuestionId?: string;
 
+  @ApiPropertyOptional()
+  attemptNumber?: number;
+
+  @ApiPropertyOptional()
+  trigger?: string;
+
+  @ApiPropertyOptional()
+  promptVersion?: string;
+
+  @ApiPropertyOptional()
+  humanRejectionContext?: unknown;
+
+  @ApiPropertyOptional()
+  criticalIssues?: unknown;
+
+  @ApiPropertyOptional()
+  humanAiAgreement?: boolean;
+
   @ApiProperty()
   createdAt!: Date;
 }

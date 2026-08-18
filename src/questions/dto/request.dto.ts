@@ -1,4 +1,4 @@
-import { IsBoolean, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Difficulty } from '@prisma/client';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -150,6 +150,40 @@ export class FindAllQuestionsDto {
     @IsString()
     sortOrder?: 'asc' | 'desc';
 }
+// ============================================
+// Question edit DTO
+// ============================================
+
+export class UpdateQuestionDto {
+    @IsOptional() @IsString() stem?: string;
+    @IsOptional() @IsString() leadInQuestion?: string | null;
+    @IsOptional() @IsString() explanation?: string;
+    @IsOptional() @IsString() topicId?: string;
+    @IsOptional() @IsEnum(Difficulty) difficulty?: Difficulty;
+    @IsOptional() @IsString() sourceType?: QuestionSourceType;
+    @IsOptional() @IsString() system?: string | null;
+    @IsOptional() @IsString() discipline?: string | null;
+    @IsOptional() @IsString() patientProfile?: string | null;
+    @IsOptional() @IsString() chiefComplaint?: string | null;
+    @IsOptional() @IsArray() @IsString({ each: true }) keySymptoms?: string[];
+    @IsOptional() @IsString() physicalExam?: string | null;
+    @IsOptional() @IsString() mainClue?: string | null;
+    @IsOptional() @IsString() supportingClue?: string | null;
+    @IsOptional() @IsString() correctAnswerLetter?: string | null;
+    @IsOptional() @IsString() correctAnswerText?: string | null;
+    @IsOptional() @IsString() stepByStepReasoning?: string | null;
+    @IsOptional() @IsString() educationalObjective?: string | null;
+    @IsOptional() @IsArray() @IsString({ each: true }) buzzwords?: string[];
+    @IsOptional() @IsString() buzzwordCombinationCorrect?: string | null;
+    @IsOptional() @IsArray() @IsString({ each: true }) relatedConcepts?: string[];
+    @IsOptional() @IsString() suggestedImages?: string | null;
+    @IsOptional() @IsArray() choices?: Array<{ id?: string; text: string; isCorrect: boolean; order?: number }>;
+    @IsOptional() @IsArray() wrongOptions?: Array<{ letter: string; text: string; explanation?: string | null; buzzwordCombo?: string | null; order?: number }>;
+    @IsOptional() @IsObject() vitals?: { bloodPressure?: string | null; heartRate?: number | null; pulseOximetry?: number | null; temperature?: number | null; respiratoryRate?: number | null } | null;
+    @IsOptional() @IsArray() @IsString({ each: true }) tags?: string[];
+    @IsString() reason!: string;
+}
+
 // ============================================
 // Review DTOs
 // ============================================

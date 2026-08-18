@@ -82,6 +82,34 @@ enum AiReviewVerdict {
   FAIL
 }
 
+enum AiReviewTrigger {
+  MANUAL
+  AUTOMATIC
+  RE_REVIEW
+  AFTER_HUMAN_REJECTION
+  AFTER_EDIT
+  AFTER_AI_CORRECTION
+}
+
+enum QuestionRevisionType {
+  ORIGINAL
+  HUMAN_EDIT
+  AI_REPLACEMENT
+  AI_CORRECTION
+  MANUAL_CORRECTION
+}
+
+enum ExamMode {
+  ADMIN
+  STUDENT_MOCK
+}
+
+enum ExamAttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
 model User {
   id String @id @default(cuid())
 
@@ -105,8 +133,8 @@ model User {
 
   timezone String?
 
-  acceptedTerms       Boolean @default(false)
-  acceptedPrivacy     Boolean @default(false)
+  acceptedTerms   Boolean @default(false)
+  acceptedPrivacy Boolean @default(false)
 
   role Role @default(STUDENT)
 
@@ -119,15 +147,16 @@ model User {
   skippedQuestions  String[] @default([])
 
   // Track questions assigned to this user for review (exclusive assignment)
-  assignedQuestions  String[] @default([])
+  assignedQuestions String[] @default([])
   // User's preferred subjects for question assignment
-  preferredSubjects  String[] @default([])
+  preferredSubjects String[] @default([])
 
   sessions Session[]
 
   attempts QuestionAttempt[]
 
   examAttempts ExamAttempt[]
+  createdExams Exam[]        @relation("ExamCreator")
 
   conversations Conversation[]
 
@@ -241,7 +270,7 @@ model QualityReview {
   vignetteReview     String?
   buzzwordReview     String? // Only for buzzword questions
 
-  reviewedBy String?  // User ID of the quality reviewer
+  reviewedBy String? // User ID of the quality reviewer
   reviewedAt DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -252,8 +281,14 @@ model QualityReview {
 model AiReview {
   id String @id @default(cuid())
 
-  questionId String @unique
-  question   Question @relation(fields: [questionId], references: [id])
+  questionId String
+  question   Question          @relation(fields: [questionId], references: [id])
+  revisionId String?
+  revision   QuestionRevision? @relation(fields: [revisionId], references: [id])
+
+  attemptNumber Int             @default(1)
+  trigger       AiReviewTrigger @default(MANUAL)
+  promptVersion String          @default("v1")
 
   // Overall verdict
   verdict AiReviewVerdict
@@ -261,29 +296,32 @@ model AiReview {
   // Structured scores (0-100)
   usmleStyleScore         Int?
   medicalAccuracyScore    Int?
-  hallucinationRiskScore  Int?    // Higher = more hallucination risk
+  hallucinationRiskScore  Int? // Higher = more hallucination risk
   explanationQualityScore Int?
   clinicalRelevanceScore  Int?
   grammaticalQualityScore Int?
 
   // Detailed feedback
-  usmleStyleFeedback         String?  // Free-text
+  usmleStyleFeedback         String? // Free-text
   medicalAccuracyFeedback    String?
-  hallucinationDetails       String?  // Specific hallucination claims
+  hallucinationDetails       String? // Specific hallucination claims
   explanationQualityFeedback String?
   clinicalRelevanceFeedback  String?
   grammaticalFeedback        String?
-  generalFeedback            String?  // Overall assessment
+  generalFeedback            String? // Overall assessment
 
   // Metadata
-  reviewedByAi      String?   // Which model was used (e.g., "deepseek/deepseek-v4-flash")
-  tokenUsage        Int?      // Tokens used for this review
-  reviewDurationMs  Int?      // How long the review took
+  reviewedByAi     String? // Which model was used (e.g., "deepseek/deepseek-v4-flash")
+  tokenUsage       Int? // Tokens used for this review
+  reviewDurationMs Int? // How long the review took
 
   // If FAILED: what was the action taken
-  replacementQuestionId String?  // If a new question was generated to replace this one
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  replacementQuestionId String? // If a new question was generated to replace this one
+  humanRejectionContext Json?
+  criticalIssues        Json?
+  humanAiAgreement      Boolean?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@map("ai_reviews")
 }
@@ -308,9 +346,9 @@ model GenerationJob {
   errorMessage String?
 
   // Count of questions generated
-  questionCount Int @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  questionCount Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Question {
@@ -372,28 +410,51 @@ model Question {
   importedBy String?
 
   // === RELATIONSHIPS ===
-  choices       Choice[]
-  wrongOptions  WrongOption[]
-  vitals        Vitals?
-  qualityReview QualityReview?
-  aiReview      AiReview?
-  references QuestionReference[]
+  choices            Choice[]
+  wrongOptions       WrongOption[]
+  vitals             Vitals?
+  qualityReview      QualityReview?
+  aiReviews          AiReview[]
+  revisions          QuestionRevision[]
+  aiReplacements     Question[]          @relation("QuestionReplacements")
+  originalQuestionId String?
+  originalQuestion   Question?           @relation("QuestionReplacements", fields: [originalQuestionId], references: [id])
+  references         QuestionReference[]
 
   tags QuestionTag[]
 
   attempts QuestionAttempt[]
 
-  isPublished Boolean @default(false)
-  reviewed    Boolean @default(false)
-  rejected    Boolean @default(false)
-  reviewedBy  String?     // User ID of the reviewer (audit trail)
-  reviewNotes Json?     // Flexible attribute-level review notes (e.g. { stem: "...", choices: { "choiceId": "..." }, explanation: "..." })
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isPublished Boolean  @default(false)
+  reviewed    Boolean  @default(false)
+  rejected    Boolean  @default(false)
+  reviewedBy  String? // User ID of the reviewer (audit trail)
+  reviewNotes Json? // Flexible attribute-level review notes (e.g. { stem: "...", choices: { "choiceId": "..." }, explanation: "..." })
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   examQuestions ExamQuestion[]
 
   questionResponses QuestionResponse[]
+}
+
+model QuestionRevision {
+  id String @id @default(cuid())
+
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+
+  revisionNumber Int
+  revisionType   QuestionRevisionType
+  snapshot       Json
+  reason         String?
+  createdBy      String?
+  createdAt      DateTime             @default(now())
+
+  aiReviews AiReview[]
+
+  @@unique([questionId, revisionNumber])
+  @@index([questionId, createdAt])
 }
 
 model QuestionAttempt {
@@ -407,7 +468,7 @@ model QuestionAttempt {
   isCorrect Boolean
 
   timeSpentSec Int
-  user User @relation(fields: [userId], references: [id])
+  user         User @relation(fields: [userId], references: [id])
 
   question Question @relation(fields: [questionId], references: [id])
 
@@ -428,7 +489,7 @@ model QuestionReference {
 model Reference {
   id String @id @default(cuid())
 
-  title String
+  title  String
   source String
 
   url String?
@@ -464,43 +525,43 @@ model Document {
 
   title String
 
-  content String?     // Store the original content for re-ingestion
-  source String?
+  content String? // Store the original content for re-ingestion
+  source  String?
 
-  fileType String?    // e.g., 'markdown', 'text', 'html', 'pdf', 'docx'
+  fileType String? // e.g., 'markdown', 'text', 'html', 'pdf', 'docx'
 
-  charCount Int?      // Total character count of original content
+  charCount Int? // Total character count of original content
 
   status DocumentStatus
 
-  metadata Json?      // Store chunking config (chunkSize, overlap, strategy, etc.)
+  metadata Json? // Store chunking config (chunkSize, overlap, strategy, etc.)
 
-  chunks DocumentChunk[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  chunks    DocumentChunk[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 }
 
 model DocumentChunk {
   id String @id @default(cuid())
 
   documentId String
-  document Document @relation(fields: [documentId], references: [id])
+  document   Document @relation(fields: [documentId], references: [id])
 
   chunkIndex Int
-  content String
+  content    String
 
   vectorId String?
 
-  metadata Json?
+  metadata  Json?
   createdAt DateTime @default(now())
 }
 
 model ExamQuestion {
   examId     String
   questionId String
-  blockIndex Int @default(0)
+  blockIndex Int    @default(0)
 
-  exam Exam @relation(fields: [examId], references: [id])
+  exam     Exam     @relation(fields: [examId], references: [id])
   question Question @relation(fields: [questionId], references: [id])
 
   @@id([examId, questionId])
@@ -513,32 +574,37 @@ model ExamAttempt {
   examId String
   userId String
 
-  score Float
+  score             Float             @default(0)
+  correctAnswers    Int               @default(0)
+  answeredQuestions Int               @default(0)
+  currentBlock      Int               @default(0)
+  status            ExamAttemptStatus @default(IN_PROGRESS)
+  blockStartedAt    DateTime?
 
-  startedAt DateTime
-
+  startedAt   DateTime  @default(now())
   completedAt DateTime?
 
-  // Track individual question attempts within this exam attempt
-  questionAttempts Json? // Array of { questionId, selectedChoiceId, isCorrect, timeSpentSec, blockIndex }
-  user User @relation(fields: [userId], references: [id])
+  // Array of { questionId, selectedChoiceId, isCorrect, timeSpentSec, blockIndex, answeredAt }
+  questionAttempts Json @default("[]")
+  user             User @relation(fields: [userId], references: [id])
 
   exam Exam @relation(fields: [examId], references: [id])
 
   @@index([examId])
   @@index([userId])
+  @@index([userId, status])
 }
 
 model Exam {
   id String @id @default(cuid())
 
-  title String
+  title       String
   description String?
 
   // Exam structure configuration
-  blockCount          Int @default(8)
-  questionsPerBlock   Int @default(20)
-  secondsPerQuestion  Int @default(90)
+  blockCount         Int @default(8)
+  questionsPerBlock  Int @default(20)
+  secondsPerQuestion Int @default(90)
 
   // Computed total duration in minutes (blockCount * questionsPerBlock * secondsPerQuestion / 60)
   durationMin Int
@@ -548,11 +614,14 @@ model Exam {
   selectionSettings Json?
 
   // Status: use isActive instead of delete (set to false to disable)
-  isActive Boolean @default(true)
+  isActive    Boolean  @default(true)
+  mode        ExamMode @default(ADMIN)
+  createdById String?
+  createdBy   User?    @relation("ExamCreator", fields: [createdById], references: [id])
 
   questions ExamQuestion[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 
   examAttempts ExamAttempt[]
 }
@@ -577,17 +646,17 @@ model Flashcard {
 model Subject {
   id String @id @default(cuid())
 
-  name String @unique
+  name        String  @unique
   description String?
 
-  topics Topic[]
+  topics    Topic[]
   createdAt DateTime @default(now())
 }
 
 model Topic {
   id String @id @default(cuid())
 
-  name String
+  name      String
   subjectId String
   subject   Subject @relation(fields: [subjectId], references: [id])
 
@@ -598,7 +667,7 @@ model Topic {
   children Topic[] @relation("TopicHierarchy")
 
   questions Question[]
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
 }
 
 model Conversation {
@@ -631,5 +700,3 @@ model Message {
 
   @@index([conversationId])
 }
-
-

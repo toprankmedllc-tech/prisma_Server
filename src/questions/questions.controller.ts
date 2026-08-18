@@ -16,11 +16,12 @@ import {
 import type { Request } from 'express';
 import { QuestionsService } from './questions.service';
 import { QuestionGenerationService } from './question-generation.service';
-import { GenerateQuestionsDto, ReviewQuestionDto, CreateQualityReviewDto, UnpublishByDisciplineDto } from './dto/request.dto';
+import { GenerateQuestionsDto, ReviewQuestionDto, CreateQualityReviewDto, UnpublishByDisciplineDto, UpdateQuestionDto } from './dto/request.dto';
 import { GenerateQuestionsResponseDto, QuestionResponseDto, QuestionDetailDto, ReviewDashboardItemDto } from './dto/response.dto';
 import { ApiQuery, ApiCookieAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { QuestionQueueService } from '../question-queue/question-queue.service';
+import { AdminGuard } from '../admin/admin.guard';
 
 interface RequestWithUser extends Request {
     user: {
@@ -335,6 +336,20 @@ export class QuestionsController {
     // }
 
     // ============================================
+    // EDIT: Preserve a revision before applying admin changes
+    // ============================================
+    @Patch(':id/edit')
+    @UseGuards(AdminGuard)
+    @ApiOperation({ summary: 'Edit a question', description: 'Updates question content, creates an immutable pre-edit revision, invalidates prior approval, and leaves the question unpublished.' })
+    async editQuestion(
+        @Req() req: RequestWithUser,
+        @Param('id') id: string,
+        @Body() dto: UpdateQuestionDto,
+    ): Promise<QuestionDetailDto> {
+        return this.questionsService.updateQuestion(id, dto, req.user.id);
+    }
+
+    // ============================================
     // REVIEW: Review a question (approve, reject, or add notes)
     // ============================================
     @Patch(':id/review')
@@ -365,12 +380,14 @@ export class QuestionsController {
     // QUALITY REVIEW: Save / update quality review for a question
     // ============================================
     @Patch(':id/quality-review')
-    @ApiOperation({ summary: 'Save quality review', description: 'Saves or updates the quality review for a question (medical accuracy, USMLE style, explanation quality, etc.). After saving, the question is automatically published.' })
+    @UseGuards(AdminGuard)
+    @ApiOperation({ summary: 'Complete quality review and publish', description: 'Requires prior human approval. Saves the quality review and publishes the question as the final controlled publication step.' })
     async saveQualityReview(
+        @Req() req: RequestWithUser,
         @Param('id') id: string,
         @Body() dto: CreateQualityReviewDto,
     ) {
-        return this.questionsService.saveQualityReview(id, dto);
+        return this.questionsService.saveQualityReview(id, { ...dto, reviewedBy: req.user.id });
     }
 
     // ============================================

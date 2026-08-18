@@ -28,7 +28,7 @@ async function bootstrap() {
   });
 
   const app = await NestFactory.create(AppModule);
-
+  
   // Apply one response shape to successful and failed API requests.
   app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());

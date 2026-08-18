@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { AiReviewTrigger } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
@@ -40,8 +41,9 @@ export class AiReviewService {
                 type: 'single',
                 questionId,
                 options: {
-                    autoPublish: options?.autoPublish ?? true,
-                    autoRegenerate: options?.autoRegenerate ?? true,
+                    // AI review is informational only; publication is controlled by Quality Review.
+                    autoPublish: false,
+                    autoRegenerate: options?.autoRegenerate ?? false,
                 },
             },
             {
@@ -60,8 +62,9 @@ export class AiReviewService {
         questionId: string,
         options?: { autoPublish?: boolean; autoRegenerate?: boolean },
     ): Promise<AiReviewResultDto> {
-        const autoPublish = options?.autoPublish ?? true;
-        const autoRegenerate = options?.autoRegenerate ?? true;
+        // Publication is intentionally never performed by AI review. The option is
+        // retained for API compatibility; publishing belongs to Quality Review.
+        const autoRegenerate = options?.autoRegenerate ?? false;
 
         // 1. Fetch the question with related data
         const question = await this.prisma.question.findUnique({
@@ -95,7 +98,10 @@ export class AiReviewService {
         }
 
         // 3. Build prompt and call LLM
-        const userPrompt = buildAiReviewUserPrompt(question, context);
+        const userPrompt = buildAiReviewUserPrompt(question, context, {
+            rejected: question.rejected,
+            reviewNotes: question.reviewNotes,
+        });
         const startTime = Date.now();
 
         let llmResponse: string;
@@ -115,42 +121,51 @@ export class AiReviewService {
         // 4. Parse the LLM response
         const reviewResult = this.parseReviewResponse(llmResponse);
 
-        // 5. Save the AI review result to DB
+        // 5. Save every AI review attempt. Re-reviews must remain auditable and
+        // must never overwrite an earlier verdict.
+        const previousReviewCount = await this.prisma.aiReview.count({
+            where: { questionId },
+        });
+        const trigger: AiReviewTrigger = question.rejected
+            ? AiReviewTrigger.AFTER_HUMAN_REJECTION
+            : previousReviewCount > 0
+                ? AiReviewTrigger.RE_REVIEW
+                : AiReviewTrigger.MANUAL;
+        const reviewData = {
+            verdict: reviewResult.verdict,
+            medicalAccuracyScore: reviewResult.scores.medicalAccuracy,
+            hallucinationRiskScore: reviewResult.scores.hallucinationRisk,
+            usmleStyleScore: reviewResult.scores.usmleStyle,
+            explanationQualityScore: reviewResult.scores.explanationQuality,
+            clinicalRelevanceScore: reviewResult.scores.clinicalRelevance,
+            grammaticalQualityScore: reviewResult.scores.grammaticalQuality,
+            usmleStyleFeedback: reviewResult.feedback.usmleStyle || null,
+            medicalAccuracyFeedback: reviewResult.feedback.medicalAccuracy || null,
+            hallucinationDetails: reviewResult.feedback.hallucinationDetails || null,
+            explanationQualityFeedback: reviewResult.feedback.explanationQuality || null,
+            clinicalRelevanceFeedback: reviewResult.feedback.clinicalRelevance || null,
+            grammaticalFeedback: reviewResult.feedback.grammatical || null,
+            generalFeedback: reviewResult.feedback.general || null,
+            reviewedByAi: 'deepseek/deepseek-v4-flash',
+            tokenUsage: undefined,
+            reviewDurationMs,
+            attemptNumber: previousReviewCount + 1,
+            trigger,
+            promptVersion: 'v1',
+            humanRejectionContext: question.rejected ? question.reviewNotes ?? undefined : undefined,
+            humanAiAgreement: question.rejected ? reviewResult.verdict === 'FAIL' : undefined,
+        };
+
         const savedReview = await this.prisma.aiReview.create({
-            data: {
-                questionId,
-                verdict: reviewResult.verdict,
-                medicalAccuracyScore: reviewResult.scores.medicalAccuracy,
-                hallucinationRiskScore: reviewResult.scores.hallucinationRisk,
-                usmleStyleScore: reviewResult.scores.usmleStyle,
-                explanationQualityScore: reviewResult.scores.explanationQuality,
-                clinicalRelevanceScore: reviewResult.scores.clinicalRelevance,
-                grammaticalQualityScore: reviewResult.scores.grammaticalQuality,
-                usmleStyleFeedback: reviewResult.feedback.usmleStyle || null,
-                medicalAccuracyFeedback: reviewResult.feedback.medicalAccuracy || null,
-                hallucinationDetails: reviewResult.feedback.hallucinationDetails || null,
-                explanationQualityFeedback: reviewResult.feedback.explanationQuality || null,
-                clinicalRelevanceFeedback: reviewResult.feedback.clinicalRelevance || null,
-                grammaticalFeedback: reviewResult.feedback.grammatical || null,
-                generalFeedback: reviewResult.feedback.general || null,
-                reviewedByAi: 'deepseek/deepseek-v4-flash',
-                tokenUsage: undefined,
-                reviewDurationMs,
-            },
+            data: { questionId, ...reviewData },
         });
 
         let replacementQuestionId: string | undefined;
 
-        // 6. Auto-publish if PASS (and option enabled)
-        if (reviewResult.verdict === 'PASS' && autoPublish) {
-            await this.prisma.question.update({
-                where: { id: questionId },
-                data: { isPublished: true, reviewed: true },
-            });
-            this.logger.log(`Question ${questionId} auto-published (AI review: PASS)`);
-        }
+        // 6. AI review never publishes. A PASS only records an opinion; the
+        // controlled Quality Review flow is responsible for publication.
 
-        // 7. Flag as FAIL if verdict was FAIL
+        // 7. Flag FAIL for operational visibility, without changing publication state.
         if (reviewResult.verdict === 'FAIL') {
             await this.prisma.question.update({
                 where: { id: questionId },
@@ -248,7 +263,7 @@ export class AiReviewService {
     }): Promise<any[]> {
         // Find questions that do NOT have an AiReview record
         const where: any = {
-            aiReview: null,
+            aiReviews: { none: {} },
         };
 
         if (filters?.sourceType) where.sourceType = filters.sourceType;
@@ -277,17 +292,15 @@ export class AiReviewService {
         limit?: number;
     }): Promise<any[]> {
         const where: any = {
-            aiReview: {
-                isNot: null,
-            },
+            aiReviews: { some: {} },
         };
 
         if (filters?.sourceType) where.sourceType = filters.sourceType;
         if (filters?.difficulty) where.difficulty = filters.difficulty;
         if (filters?.source) where.source = filters.source;
         if (filters?.verdict) {
-            where.aiReview = {
-                verdict: filters.verdict,
+            where.aiReviews = {
+                some: { verdict: filters.verdict },
             };
         }
 
@@ -301,10 +314,10 @@ export class AiReviewService {
                 wrongOptions: { orderBy: { order: 'asc' } },
                 vitals: true,
                 tags: { include: { tag: true } },
-                // aiReview: {
-                //     orderBy: { createdAt: 'desc' },
-                //     take: 1,
-                // },
+                aiReviews: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 1,
+                },
             },
         });
     }
@@ -349,6 +362,21 @@ export class AiReviewService {
 
         if (!review) return null;
 
+        return this.toResultDto(review);
+    }
+
+    // ============================================
+    // GET COMPLETE AI REVIEW HISTORY FOR A QUESTION
+    // ============================================
+    async getReviewHistory(questionId: string): Promise<AiReviewResultDto[]> {
+        const reviews = await this.prisma.aiReview.findMany({
+            where: { questionId },
+            orderBy: [{ attemptNumber: 'desc' }, { createdAt: 'desc' }],
+        });
+        return reviews.map((review) => this.toResultDto(review));
+    }
+
+    private toResultDto(review: any): AiReviewResultDto {
         return {
             id: review.id,
             questionId: review.questionId,
@@ -373,6 +401,13 @@ export class AiReviewService {
             reviewedByAi: review.reviewedByAi || undefined,
             tokenUsage: review.tokenUsage || undefined,
             reviewDurationMs: review.reviewDurationMs || undefined,
+            replacementQuestionId: review.replacementQuestionId || undefined,
+            attemptNumber: review.attemptNumber,
+            trigger: review.trigger,
+            promptVersion: review.promptVersion,
+            humanRejectionContext: review.humanRejectionContext ?? undefined,
+            criticalIssues: review.criticalIssues ?? undefined,
+            humanAiAgreement: review.humanAiAgreement ?? undefined,
             createdAt: review.createdAt,
         };
     }

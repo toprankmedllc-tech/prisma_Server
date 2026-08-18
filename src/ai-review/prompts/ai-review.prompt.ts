@@ -13,6 +13,9 @@ Your task is to evaluate USMLE-style questions for quality, accuracy, and halluc
 You will be given:
 1. A question (stem, choices, explanation, wrong options, metadata, etc.)
 2. Retrieved medical context from a verified knowledge bank
+3. Human review status and rejection notes when available
+
+When a human reviewer rejected the question, you must adjudicate that rejection explicitly. Address every rejection note, do not dismiss it without evidence, and treat unresolved human concerns as a reason to FAIL.
 
 You must evaluate the question against these criteria and output a structured JSON verdict.
 
@@ -73,7 +76,9 @@ For each of the following, check if the question fabricates information:
 - Are the buzzwordCombo strings in wrongOptions accurate?
 
 ## VERDICT RULES
-- PASS if: medicalAccuracy >= 70 AND hallucinationRisk < 30 AND usmleStyle >= 50
+- PASS only if: medicalAccuracy >= 85 AND hallucinationRisk < 15 AND usmleStyle >= 75 AND explanationQuality >= 75 AND clinicalRelevance >= 75 AND grammaticalQuality >= 75
+- If a human reviewer rejected the question, PASS also requires every rejection concern to be specifically resolved.
+- Any unresolved ambiguity, multiple defensible answers, incorrect answer key, unsupported medical claim, missing explanation, or explanation-answer inconsistency requires FAIL.
 - FAIL otherwise
 
 If FAIL, provide specific details on what needs to be fixed so the generation system can produce a better replacement.`;
@@ -81,6 +86,7 @@ If FAIL, provide specific details on what needs to be fixed so the generation sy
 export function buildAiReviewUserPrompt(
   question: any,
   context: string,
+  reviewContext?: { rejected?: boolean; reviewNotes?: unknown },
 ): string {
   const choiceLines = question.choices
     .map((c: any) => `${c.letter || ''}. ${c.text} [${c.isCorrect ? 'CORRECT' : 'INCORRECT'}]`)
@@ -109,7 +115,18 @@ export function buildAiReviewUserPrompt(
       )
     : 'N/A';
 
+  const humanReviewSection = reviewContext?.rejected
+    ? `## Human Review Rejection (must be explicitly adjudicated)
+- Human decision: REJECTED
+- Rejection notes:
+${JSON.stringify(reviewContext.reviewNotes ?? {}, null, 2)}
+
+You must explain whether each rejection concern is valid and identify the exact correction required. An unresolved concern mandates a FAIL verdict.`
+    : '## Human Review Status\n- No human rejection context was provided.';
+
   return `Review the following USMLE question:
+
+${humanReviewSection}
 
 ## Question Metadata
 - ID: ${question.id}

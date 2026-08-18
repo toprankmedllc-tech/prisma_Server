@@ -1,12 +1,18 @@
 import {
-  Body, Controller, Delete, Get, Param, Post, Put, Patch, UseGuards, HttpCode, HttpStatus,
+  Body, Controller, Delete, Get, Param, Post, Put, Patch, UseGuards, HttpCode, HttpStatus, Req,
 } from '@nestjs/common';
 import { ApiTags, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../admin/admin.guard';
 import { CreateExamDto } from '../dto/create-exam.dto';
+import { CreateMockExamDto, MockChatDto, SubmitMockAnswerDto } from '../dto/create-mock-exam.dto';
+import { Request } from 'express';
 import { UpdateExamDto } from '../dto/update-exam.dto';
 import { ExamService } from '../services/exam.service';
+
+interface RequestWithUser extends Request {
+  user: { id: string };
+}
 
 @ApiTags('Exams')
 @ApiCookieAuth('access_token')
@@ -14,6 +20,49 @@ import { ExamService } from '../services/exam.service';
 @Controller('exams')
 export class ExamController {
   constructor(private readonly examService: ExamService) {}
+
+  @Post('mock')
+  @ApiOperation({ summary: 'Create a student-owned mock exam' })
+  async createMockExam(@Req() req: RequestWithUser, @Body() dto: CreateMockExamDto) {
+    return this.examService.createMockExam(req.user.id, dto);
+  }
+
+  @Get('mock/mine')
+  @ApiOperation({ summary: 'List the current student mock exams and scores' })
+  async getMyMockExams(@Req() req: RequestWithUser) {
+    return this.examService.getMyMockExams(req.user.id);
+  }
+
+  @Post('mock/:id/start')
+  async startMockAttempt(@Req() req: RequestWithUser, @Param('id') id: string) {
+    return this.examService.startMockAttempt(id, req.user.id);
+  }
+
+  @Get('mock/attempt/:attemptId/block')
+  async getAttemptBlock(@Req() req: RequestWithUser, @Param('attemptId') attemptId: string) {
+    return this.examService.getAttemptBlock(attemptId, req.user.id);
+  }
+
+  @Post('mock/chat')
+  @ApiOperation({ summary: 'Ask ThoughtProcess about a mock question' })
+  async chatAboutMockQuestion(@Req() req: RequestWithUser, @Body() dto: MockChatDto) {
+    return this.examService.chatAboutMockQuestion(req.user.id, dto);
+  }
+
+  @Post('mock/attempt/:attemptId/questions/:questionId/answer')
+  async submitMockAnswer(@Req() req: RequestWithUser, @Param('attemptId') attemptId: string, @Param('questionId') questionId: string, @Body() dto: SubmitMockAnswerDto) {
+    return this.examService.submitMockAnswer(attemptId, questionId, req.user.id, dto);
+  }
+
+  @Post('mock/attempt/:attemptId/complete-block')
+  async completeMockBlock(@Req() req: RequestWithUser, @Param('attemptId') attemptId: string) {
+    return this.examService.completeMockBlock(attemptId, req.user.id);
+  }
+
+  @Get('mock/attempt/:attemptId/results')
+  async getMockResults(@Req() req: RequestWithUser, @Param('attemptId') attemptId: string) {
+    return this.examService.getMockResults(attemptId, req.user.id);
+  }
 
   @Post()
   @UseGuards(AdminGuard)
