@@ -5,7 +5,7 @@ import { ApiTags, ApiCookieAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../../admin/admin.guard';
 import { CreateExamDto } from '../dto/create-exam.dto';
-import { CreateMockExamDto, MockChatDto, SubmitMockAnswerDto } from '../dto/create-mock-exam.dto';
+import { CreateMockExamDto, MockChatDto, MockTipDto, SubmitMockAnswerDto } from '../dto/create-mock-exam.dto';
 import { Request } from 'express';
 import { UpdateExamDto } from '../dto/update-exam.dto';
 import { ExamService } from '../services/exam.service';
@@ -33,6 +33,12 @@ export class ExamController {
     return this.examService.getMyMockExams(req.user.id);
   }
 
+  @Get('mock/available')
+  @ApiOperation({ summary: 'List active admin-created exams available to students' })
+  async getAvailableAdminExams(@Req() req: RequestWithUser) {
+    return this.examService.getAvailableAdminExams(req.user.id);
+  }
+
   @Post('mock/:id/start')
   async startMockAttempt(@Req() req: RequestWithUser, @Param('id') id: string) {
     return this.examService.startMockAttempt(id, req.user.id);
@@ -41,6 +47,12 @@ export class ExamController {
   @Get('mock/attempt/:attemptId/block')
   async getAttemptBlock(@Req() req: RequestWithUser, @Param('attemptId') attemptId: string) {
     return this.examService.getAttemptBlock(attemptId, req.user.id);
+  }
+
+  @Post('mock/tip')
+  @ApiOperation({ summary: 'Spend one diamond to generate a question tip' })
+  async generateMockQuestionTip(@Req() req: RequestWithUser, @Body() dto: MockTipDto) {
+    return this.examService.generateMockQuestionTip(req.user.id, dto);
   }
 
   @Post('mock/chat')

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateExamDto } from '../dto/create-exam.dto';
 import { UpdateExamDto } from '../dto/update-exam.dto';
-import { CreateMockExamDto, SubmitMockAnswerDto, MockChatDto } from '../dto/create-mock-exam.dto';
+import { CreateMockExamDto, SubmitMockAnswerDto, MockChatDto, MockTipDto } from '../dto/create-mock-exam.dto';
 import { LLMService } from '../../llm/llm.service';
 
 @Injectable()
@@ -235,6 +235,29 @@ export class ExamService {
     });
   }
 
+  async getAvailableAdminExams(userId: string) {
+    return this.prisma.exam.findMany({
+      where: { mode: 'ADMIN', isActive: true },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { questions: true } },
+        examAttempts: {
+          where: { userId },
+          orderBy: { completedAt: 'desc' },
+          select: {
+            id: true,
+            status: true,
+            currentBlock: true,
+            score: true,
+            correctAnswers: true,
+            answeredQuestions: true,
+            completedAt: true,
+          },
+        },
+      },
+    });
+  }
+
   async getStudentMockExam(id: string, userId: string) {
     const exam = await this.prisma.exam.findFirst({
       where: { id, mode: 'STUDENT_MOCK', createdById: userId, isActive: true },
@@ -264,10 +287,11 @@ export class ExamService {
       include: { question: { include: { choices: { orderBy: { order: 'asc' } }, topic: { include: { subject: true } } } } },
     });
     const answers = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
-    const answeredQuestions = answers.filter((answer) => answer.blockIndex === attempt.currentBlock);
+    const answeredQuestions = answers.filter((answer) => answer.type !== 'TIP' && answer.blockIndex === attempt.currentBlock);
     const answeredByQuestion = Object.fromEntries(answeredQuestions.map((answer) => [answer.questionId, answer.selectedChoiceId || null]));
     const resumeIndex = block.findIndex(({ question }) => !answeredQuestions.some((answer) => answer.questionId === question.id));
-    return { attemptId, blockIndex: attempt.currentBlock, blockCount: attempt.exam.blockCount, blockStartedAt: attempt.blockStartedAt, secondsPerQuestion: attempt.exam.secondsPerQuestion, resumeIndex: resumeIndex === -1 ? 0 : resumeIndex, answeredByQuestion, questions: block.map(({ question }) => ({ ...question, choices: question.choices.map(({ isCorrect, ...choice }) => choice) })) };
+    const wallet = await this.prisma.user.findUnique({ where: { id: userId }, select: { diamonds: true } });
+    return { attemptId, blockIndex: attempt.currentBlock, blockCount: attempt.exam.blockCount, blockStartedAt: attempt.blockStartedAt, secondsPerQuestion: attempt.exam.secondsPerQuestion, diamonds: wallet?.diamonds ?? 0, resumeIndex: resumeIndex === -1 ? 0 : resumeIndex, answeredByQuestion, questions: block.map(({ question }) => ({ ...question, choices: question.choices.map(({ isCorrect, ...choice }) => choice) })) };
   }
 
   async submitMockAnswer(attemptId: string, questionId: string, userId: string, dto: SubmitMockAnswerDto) {
@@ -276,7 +300,7 @@ export class ExamService {
     const examQuestion = await this.prisma.examQuestion.findUnique({ where: { examId_questionId: { examId: attempt.examId, questionId } }, include: { question: { include: { choices: true } } } });
     if (!examQuestion || examQuestion.blockIndex !== attempt.currentBlock) throw new BadRequestException('Question is not in the active block.');
     const existing = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
-    if (existing.some((answer) => answer.questionId === questionId)) throw new BadRequestException('Question has already been answered or skipped.');
+    if (existing.some((answer) => answer.type !== 'TIP' && answer.questionId === questionId)) throw new BadRequestException('Question has already been answered or skipped.');
     const choice = dto.selectedChoiceId ? examQuestion.question.choices.find((item) => item.id === dto.selectedChoiceId) : undefined;
     if (dto.selectedChoiceId && !choice) throw new BadRequestException('Selected choice does not belong to this question.');
     const answer = { questionId, selectedChoiceId: dto.selectedChoiceId || null, isCorrect: choice?.isCorrect === true, timeSpentSec: Math.min(dto.timeSpentSec ?? 0, attempt.exam.secondsPerQuestion), blockIndex: attempt.currentBlock, answeredAt: new Date().toISOString() };
@@ -314,7 +338,7 @@ export class ExamService {
   private async getMockBlockReview(attempt: any, blockIndex: number) {
     const answers = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
     const answerByQuestion = new Map(
-      answers.filter((answer) => answer.blockIndex === blockIndex).map((answer) => [answer.questionId, answer]),
+      answers.filter((answer) => answer.type !== 'TIP' && answer.blockIndex === blockIndex).map((answer) => [answer.questionId, answer]),
     );
     const examQuestions = await this.prisma.examQuestion.findMany({
       where: { examId: attempt.examId, blockIndex },
@@ -362,7 +386,47 @@ export class ExamService {
     };
   }
 
+  async generateMockQuestionTip(userId: string, dto: MockTipDto) {
+    const attempt = await this.getOwnedAttempt(dto.attemptId, userId);
+    const examQuestion = await this.prisma.examQuestion.findUnique({ where: { examId_questionId: { examId: attempt.examId, questionId: dto.questionId } } });
+    if (!examQuestion) throw new NotFoundException('Question does not belong to this mock attempt');
+
+    const question = await this.prisma.question.findUnique({
+      where: { id: dto.questionId },
+      select: { id: true, stem: true, leadInQuestion: true, topic: { select: { name: true, subject: { select: { name: true } } } } },
+    });
+    if (!question) throw new NotFoundException('Question not found');
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { diamonds: true } });
+    if (!user || user.diamonds < 1) throw new BadRequestException('You do not have enough diamonds for another tip.');
+    const attempts = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
+    const tipCount = attempts.filter((item) => item.type === 'TIP' && item.questionId === dto.questionId).length;
+    if (tipCount >= 3) throw new BadRequestException('You have used all 3 tips for this question.');
+
+    const content = await this.llmService.chat([
+      { role: 'system', content: 'You are a USMLE study tutor providing one useful hint. Give a short, indirect clue that guides reasoning without stating the diagnosis, correct answer, or final management. Do not reveal the answer. Focus on the key finding, mechanism, or next reasoning step.' },
+      { role: 'user', content: `Question subject: ${question.topic.subject.name}\nTopic: ${question.topic.name}\nQuestion stem:\n${question.stem}\n${question.leadInQuestion || ''}` },
+    ], { temperature: 0.4, maxTokens: 220 });
+
+    const tipRecord = { type: 'TIP', questionId: dto.questionId, createdAt: new Date().toISOString() };
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.user.findUnique({ where: { id: userId }, select: { diamonds: true } });
+      if (!current || current.diamonds < 1) throw new BadRequestException('You do not have enough diamonds for another tip.');
+      const currentAttempt = await tx.examAttempt.findUnique({ where: { id: dto.attemptId }, select: { questionAttempts: true } });
+      const currentAttempts = Array.isArray(currentAttempt?.questionAttempts) ? currentAttempt.questionAttempts as any[] : [];
+      const currentTipCount = currentAttempts.filter((item) => item.type === 'TIP' && item.questionId === dto.questionId).length;
+      if (currentTipCount >= 3) throw new BadRequestException('You have used all 3 tips for this question.');
+      await tx.user.update({ where: { id: userId }, data: { diamonds: { decrement: 1 } } });
+      await tx.examAttempt.update({ where: { id: dto.attemptId }, data: { questionAttempts: [...currentAttempts, tipRecord] } });
+      return current.diamonds - 1;
+    });
+    return { questionId: dto.questionId, tip: content, diamonds: updated, tipsRemaining: 3 - tipCount - 1 };
+  }
+
   async chatAboutMockQuestion(userId: string, dto: MockChatDto) {
+    const attempt = await this.getOwnedAttempt(dto.attemptId, userId);
+    const examQuestion = await this.prisma.examQuestion.findUnique({ where: { examId_questionId: { examId: attempt.examId, questionId: dto.questionId } } });
+    if (!examQuestion) throw new NotFoundException('Question does not belong to this mock attempt');
     const question = await this.prisma.question.findFirst({
       where: { id: dto.questionId, isPublished: true },
       include: { choices: { orderBy: { order: 'asc' } }, wrongOptions: { orderBy: { order: 'asc' } }, topic: { include: { subject: true } } },

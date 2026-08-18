@@ -53,6 +53,9 @@ export class MockChatMessageDto {
 
 export class MockChatDto {
   @IsString()
+  attemptId!: string;
+
+  @IsString()
   questionId!: string;
 
   @IsString()
@@ -64,6 +67,14 @@ export class MockChatDto {
   @IsOptional()
   @IsString()
   selectedText?: string;
+}
+
+export class MockTipDto {
+  @IsString()
+  attemptId!: string;
+
+  @IsString()
+  questionId!: string;
 }
 
 export class SubmitMockAnswerDto {
