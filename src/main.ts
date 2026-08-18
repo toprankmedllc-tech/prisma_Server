@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
@@ -28,7 +29,8 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
-  // Apply global exception filter — catches ALL exceptions and returns proper HTTP responses
+  // Apply one response shape to successful and failed API requests.
+  app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
 
   // Cookie parser middleware for reading cookies
