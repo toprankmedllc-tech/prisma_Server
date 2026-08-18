@@ -40,6 +40,7 @@ async function bootstrap() {
   const allowedOrigins = [
     'https://staging-test.toprankmd.com',
     'https://usmle-review.vercel.app',
+    'https://api.toprankmd.com',
     'http://localhost:3000',
     'http://localhost:4000',     // adding this here for cors error check 
   ];
