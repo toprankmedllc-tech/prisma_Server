@@ -13,6 +13,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { AdminModule } from './admin/admin.module';
 import { QuestionQueueModule } from './question-queue/question-queue.module';
 import { AiReviewModule } from './ai-review/ai-review.module';
+import { StudyModule } from './study/study.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { AiReviewModule } from './ai-review/ai-review.module';
     AdminModule,
     QuestionQueueModule,
     AiReviewModule,
+    StudyModule,
   ],
 })
 export class AppModule { }

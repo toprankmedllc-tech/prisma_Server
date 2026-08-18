@@ -110,6 +110,17 @@ enum ExamAttemptStatus {
   ABANDONED
 }
 
+enum StudySessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum StudySessionQuestionStatus {
+  UNANSWERED
+  CORRECT
+}
+
 model User {
   id String @id @default(cuid())
 
@@ -160,6 +171,7 @@ model User {
 
   examAttempts ExamAttempt[]
   createdExams Exam[]        @relation("ExamCreator")
+  studySessions StudySession[]
 
   conversations Conversation[]
 
@@ -434,11 +446,11 @@ model Question {
   reviewedBy  String? // User ID of the reviewer (audit trail)
   reviewNotes Json? // Flexible attribute-level review notes (e.g. { stem: "...", choices: { "choiceId": "..." }, explanation: "..." })
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+    updatedAt DateTime @updatedAt
   examQuestions ExamQuestion[]
-
+  studySessionQuestions StudySessionQuestion[]
   questionResponses QuestionResponse[]
+
 }
 
 model QuestionRevision {
@@ -571,6 +583,62 @@ model ExamQuestion {
   @@index([examId, blockIndex])
 }
 
+model StudySession {
+  id           String             @id @default(cuid())
+  userId       String
+  title        String
+  description  String?
+  questionType QuestionSourceType?
+  difficulty   Difficulty?
+  subjectId    String?
+  status       StudySessionStatus @default(IN_PROGRESS)
+  startedAt    DateTime           @default(now())
+  completedAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  user      User                   @relation(fields: [userId], references: [id])
+  subject   Subject?               @relation(fields: [subjectId], references: [id])
+  questions StudySessionQuestion[]
+
+  @@index([userId, status])
+}
+
+model StudySessionQuestion {
+  id                String                    @id @default(cuid())
+  sessionId         String
+  questionId        String
+  order             Int
+  status            StudySessionQuestionStatus @default(UNANSWERED)
+  firstDisplayedAt  DateTime?
+  lastDisplayedAt   DateTime?
+  totalTimeSpentSec Int                       @default(0)
+  attemptCount      Int                       @default(0)
+  pointsAwarded     Int                       @default(0)
+  answeredAt        DateTime?
+
+  session  StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question Question     @relation(fields: [questionId], references: [id])
+  answerAttempts StudyAnswerAttempt[]
+
+  @@unique([sessionId, questionId])
+  @@unique([sessionId, order])
+  @@index([sessionId, status])
+}
+
+model StudyAnswerAttempt {
+  id                String   @id @default(cuid())
+  sessionQuestionId String
+  selectedChoiceId  String?
+  isCorrect         Boolean
+  timeSpentSec      Int      @default(0)
+  attemptedAt       DateTime @default(now())
+
+  sessionQuestion StudySessionQuestion @relation(fields: [sessionQuestionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionQuestionId, attemptedAt])
+}
+
 model ExamAttempt {
   id String @id @default(cuid())
 
@@ -653,6 +721,7 @@ model Subject {
   description String?
 
   topics    Topic[]
+  studySessions StudySession[]
   createdAt DateTime @default(now())
 }
 
