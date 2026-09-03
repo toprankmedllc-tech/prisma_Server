@@ -15,7 +15,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtModule.register({
       secret: process.env.JWT_ACCESS_SECRET || 'access-secret',
       signOptions: {
-        expiresIn: '15m', // Shorter lived access tokens
+        expiresIn: '30d', // Long-lived session access token
       },
     }),
   ],

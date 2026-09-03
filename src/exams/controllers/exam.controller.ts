@@ -8,6 +8,7 @@ import { CreateExamDto } from '../dto/create-exam.dto';
 import { CreateMockExamDto, MockChatDto, MockTipDto, SubmitMockAnswerDto } from '../dto/create-mock-exam.dto';
 import { Request } from 'express';
 import { UpdateExamDto } from '../dto/update-exam.dto';
+import { FlagQuestionDto } from '../../common/dto/flag-question.dto';
 import { ExamService } from '../services/exam.service';
 
 interface RequestWithUser extends Request {
@@ -87,6 +88,18 @@ export class ExamController {
   @ApiOperation({ summary: 'List all exams' })
   async getExams() {
     return this.examService.getExams();
+  }
+
+  @Patch(':examId/questions/:questionId/flag')
+  @ApiOperation({ summary: 'Flag or unflag a question in an admin or mock exam' })
+  async flagExamQuestion(@Req() req: RequestWithUser, @Param('examId') examId: string, @Param('questionId') questionId: string, @Body() dto: FlagQuestionDto) {
+    return this.examService.setQuestionFlag(req.user.id, examId, questionId, dto.isFlagged);
+  }
+
+  @Get(':examId/questions/:questionId/flag')
+  @ApiOperation({ summary: 'Get the current student flag state for an exam question' })
+  async getExamQuestionFlag(@Req() req: RequestWithUser, @Param('examId') examId: string, @Param('questionId') questionId: string) {
+    return this.examService.getQuestionFlag(req.user.id, examId, questionId);
   }
 
   @Get(':id')

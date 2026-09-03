@@ -88,21 +88,22 @@ export class AuthService {
   );
 }
 
-    // Generate access token (15 min)
+    // Use a long-lived access token for the simple session-based frontend flow.
     const accessToken = await this.jwtService.signAsync(
       { sub: user.id, email: user.email },
       { 
         secret: process.env.JWT_ACCESS_SECRET || 'access-secret',
-        expiresIn: '15m',
+        expiresIn: '30d',
       }
     );
 
-    // Generate refresh token (7 days)
+    // Keep issuing refresh tokens for API compatibility. The frontend does not
+    // use this token, but the backend refresh endpoint remains available.
     const refreshToken = await this.jwtService.signAsync(
       { sub: user.id, email: user.email },
       {
         secret: process.env.JWT_REFRESH_SECRET || 'refresh-secret',
-        expiresIn: '7d',
+        expiresIn: '30d',
       }
     );
 
@@ -139,7 +140,7 @@ export class AuthService {
         { sub: user.id, email: user.email },
         { 
           secret: process.env.JWT_ACCESS_SECRET || 'access-secret',
-          expiresIn: '15m',
+          expiresIn: '30d',
         }
       );
 
@@ -148,7 +149,7 @@ export class AuthService {
         { sub: user.id, email: user.email },
         {
           secret: process.env.JWT_REFRESH_SECRET || 'refresh-secret',
-          expiresIn: '7d',
+          expiresIn: '30d',
         }
       );
       

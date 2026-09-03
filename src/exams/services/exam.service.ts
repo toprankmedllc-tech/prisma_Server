@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, QuestionFlagContext } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateExamDto } from '../dto/create-exam.dto';
 import { UpdateExamDto } from '../dto/update-exam.dto';
@@ -289,9 +289,32 @@ export class ExamService {
     const answers = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
     const answeredQuestions = answers.filter((answer) => answer.type !== 'TIP' && answer.blockIndex === attempt.currentBlock);
     const answeredByQuestion = Object.fromEntries(answeredQuestions.map((answer) => [answer.questionId, answer.selectedChoiceId || null]));
+    const answeredIds = new Set(answeredQuestions.map((answer) => answer.questionId));
+    const activeQuestion = block.find(({ question }) => question.id === attempt.activeQuestionId && !answeredIds.has(question.id))
+      || block.find(({ question }) => !answeredIds.has(question.id));
+    const activeQuestionStartedAt = activeQuestion
+      ? attempt.activeQuestionId === activeQuestion.question.id && attempt.activeQuestionStartedAt
+        ? attempt.activeQuestionStartedAt
+        : new Date()
+      : null;
+    if (attempt.activeQuestionId !== (activeQuestion?.question.id || null)
+      || String(attempt.activeQuestionStartedAt || '') !== String(activeQuestionStartedAt || '')) {
+      await this.prisma.examAttempt.update({
+        where: { id: attemptId },
+        data: {
+          activeQuestionId: activeQuestion?.question.id || null,
+          activeQuestionStartedAt,
+        },
+      });
+    }
+    const flags = await this.prisma.questionFlag.findMany({
+      where: { userId, context: QuestionFlagContext.MOCK_EXAM, contextId: attempt.examId, questionId: { in: block.map(({ question }) => question.id) } },
+      select: { questionId: true, isFlagged: true },
+    });
+    const flaggedQuestionIds = new Set(flags.filter((flag) => flag.isFlagged).map((flag) => flag.questionId));
     const resumeIndex = block.findIndex(({ question }) => !answeredQuestions.some((answer) => answer.questionId === question.id));
     const wallet = await this.prisma.user.findUnique({ where: { id: userId }, select: { diamonds: true } });
-    return { attemptId, blockIndex: attempt.currentBlock, blockCount: attempt.exam.blockCount, blockStartedAt: attempt.blockStartedAt, secondsPerQuestion: attempt.exam.secondsPerQuestion, diamonds: wallet?.diamonds ?? 0, resumeIndex: resumeIndex === -1 ? 0 : resumeIndex, answeredByQuestion, questions: block.map(({ question }) => ({ ...question, choices: question.choices.map(({ isCorrect, ...choice }) => choice) })) };
+    return { examId: attempt.examId, attemptId, blockIndex: attempt.currentBlock, blockCount: attempt.exam.blockCount, blockStartedAt: attempt.blockStartedAt, secondsPerQuestion: attempt.exam.secondsPerQuestion, activeQuestionId: activeQuestion?.question.id || null, activeQuestionStartedAt, diamonds: wallet?.diamonds ?? 0, resumeIndex: resumeIndex === -1 ? 0 : resumeIndex, answeredByQuestion, questions: block.map(({ question }) => ({ ...question, isFlagged: flaggedQuestionIds.has(question.id), choices: question.choices.map(({ isCorrect, ...choice }) => choice) })) };
   }
 
   async submitMockAnswer(attemptId: string, questionId: string, userId: string, dto: SubmitMockAnswerDto) {
@@ -299,12 +322,32 @@ export class ExamService {
     if (attempt.status !== 'IN_PROGRESS') throw new BadRequestException('This attempt is no longer active.');
     const examQuestion = await this.prisma.examQuestion.findUnique({ where: { examId_questionId: { examId: attempt.examId, questionId } }, include: { question: { include: { choices: true } } } });
     if (!examQuestion || examQuestion.blockIndex !== attempt.currentBlock) throw new BadRequestException('Question is not in the active block.');
+    if (attempt.activeQuestionId && attempt.activeQuestionId !== questionId) throw new BadRequestException('Only the active question can be submitted.');
     const existing = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
     if (existing.some((answer) => answer.type !== 'TIP' && answer.questionId === questionId)) throw new BadRequestException('Question has already been answered or skipped.');
     const choice = dto.selectedChoiceId ? examQuestion.question.choices.find((item) => item.id === dto.selectedChoiceId) : undefined;
     if (dto.selectedChoiceId && !choice) throw new BadRequestException('Selected choice does not belong to this question.');
-    const answer = { questionId, selectedChoiceId: dto.selectedChoiceId || null, isCorrect: choice?.isCorrect === true, timeSpentSec: Math.min(dto.timeSpentSec ?? 0, attempt.exam.secondsPerQuestion), blockIndex: attempt.currentBlock, answeredAt: new Date().toISOString() };
-    return this.prisma.examAttempt.update({ where: { id: attemptId }, data: { questionAttempts: [...existing, answer], answeredQuestions: { increment: 1 }, correctAnswers: { increment: answer.isCorrect ? 1 : 0 } } });
+
+    const now = new Date();
+    const serverTimeSpentSec = attempt.activeQuestionStartedAt
+      ? Math.max(0, Math.floor((now.getTime() - attempt.activeQuestionStartedAt.getTime()) / 1000))
+      : 0;
+    const timeSpentSec = Math.min(serverTimeSpentSec, attempt.exam.secondsPerQuestion);
+    const answer = { questionId, selectedChoiceId: dto.selectedChoiceId || null, isCorrect: choice?.isCorrect === true, timeSpentSec, blockIndex: attempt.currentBlock, answeredAt: now.toISOString() };
+    const blockQuestions = await this.prisma.examQuestion.findMany({ where: { examId: attempt.examId, blockIndex: attempt.currentBlock }, orderBy: { questionId: 'asc' }, select: { questionId: true } });
+    const answeredIds = new Set(existing.filter((item) => item.type !== 'TIP').map((item) => item.questionId));
+    answeredIds.add(questionId);
+    const nextQuestionId = blockQuestions.find((item) => !answeredIds.has(item.questionId))?.questionId || null;
+    return this.prisma.examAttempt.update({
+      where: { id: attemptId },
+      data: {
+        questionAttempts: [...existing, answer],
+        answeredQuestions: { increment: 1 },
+        correctAnswers: { increment: answer.isCorrect ? 1 : 0 },
+        activeQuestionId: nextQuestionId,
+        activeQuestionStartedAt: nextQuestionId ? now : null,
+      },
+    });
   }
 
   async completeMockBlock(attemptId: string, userId: string) {
@@ -450,6 +493,64 @@ export class ExamService {
       ...history,
       { role: 'user', content: dto.message },
     ], { temperature: 0.3, maxTokens: 1200 }) };
+  }
+
+  async setQuestionFlag(userId: string, examId: string, questionId: string, isFlagged: boolean) {
+    const exam = await this.prisma.exam.findFirst({
+      where: {
+        id: examId,
+        isActive: true,
+        OR: [
+          { mode: 'ADMIN' },
+          { mode: 'STUDENT_MOCK', createdById: userId },
+        ],
+      },
+      select: { id: true, mode: true },
+    });
+    if (!exam) throw new NotFoundException('Exam not found or unavailable.');
+
+    const question = await this.prisma.examQuestion.findUnique({
+      where: { examId_questionId: { examId, questionId } },
+      select: { questionId: true },
+    });
+    if (!question) throw new NotFoundException('Question does not belong to this exam.');
+
+    const context = exam.mode === 'ADMIN' ? QuestionFlagContext.ADMIN_EXAM : QuestionFlagContext.MOCK_EXAM;
+    const flag = await this.prisma.questionFlag.upsert({
+      where: { userId_questionId_context_contextId: { userId, questionId, context, contextId: examId } },
+      create: { userId, questionId, context, contextId: examId, isFlagged },
+      update: { isFlagged },
+      select: { questionId: true, isFlagged: true },
+    });
+    return flag;
+  }
+
+  async getQuestionFlag(userId: string, examId: string, questionId: string) {
+    const exam = await this.prisma.exam.findFirst({
+      where: {
+        id: examId,
+        isActive: true,
+        OR: [
+          { mode: 'ADMIN' },
+          { mode: 'STUDENT_MOCK', createdById: userId },
+        ],
+      },
+      select: { mode: true },
+    });
+    if (!exam) throw new NotFoundException('Exam not found or unavailable.');
+
+    const question = await this.prisma.examQuestion.findUnique({
+      where: { examId_questionId: { examId, questionId } },
+      select: { questionId: true },
+    });
+    if (!question) throw new NotFoundException('Question does not belong to this exam.');
+
+    const context = exam.mode === 'ADMIN' ? QuestionFlagContext.ADMIN_EXAM : QuestionFlagContext.MOCK_EXAM;
+    const flag = await this.prisma.questionFlag.findUnique({
+      where: { userId_questionId_context_contextId: { userId, questionId, context, contextId: examId } },
+      select: { isFlagged: true },
+    });
+    return { questionId, isFlagged: flag?.isFlagged ?? false };
   }
 
   async getMockResults(attemptId: string, userId: string) {

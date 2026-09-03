@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 import { CreateStudySessionDto, SubmitStudyAnswerDto } from './dto/create-study-session.dto';
+import { FlagQuestionDto } from '../common/dto/flag-question.dto';
 import { StudyService } from './study.service';
 
 interface RequestWithUser extends Request {
@@ -39,6 +40,12 @@ export class StudyController {
   @ApiOperation({ summary: 'Submit an answer attempt for a study question' })
   async answer(@Req() req: RequestWithUser, @Param('sessionId') sessionId: string, @Param('questionId') questionId: string, @Body() dto: SubmitStudyAnswerDto) {
     return this.studyService.submitAnswer(sessionId, questionId, req.user.id, dto.selectedChoiceId);
+  }
+
+  @Patch(':sessionId/questions/:questionId/flag')
+  @ApiOperation({ summary: 'Flag or unflag a question in a study session' })
+  async flagQuestion(@Req() req: RequestWithUser, @Param('sessionId') sessionId: string, @Param('questionId') questionId: string, @Body() dto: FlagQuestionDto) {
+    return this.studyService.setQuestionFlag(sessionId, questionId, req.user.id, dto.isFlagged);
   }
 
   @Get(':id')

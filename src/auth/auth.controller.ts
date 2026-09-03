@@ -22,27 +22,22 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+
     res.cookie('access_token', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: thirtyDays,
       path: '/',
     });
 
+    // Keep the refresh cookie/API available for existing API clients.
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/auth/refresh',
-    });
-
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: thirtyDays,
       path: '/',
     });
   }

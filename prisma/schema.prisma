@@ -121,6 +121,12 @@ enum StudySessionQuestionStatus {
   CORRECT
 }
 
+enum QuestionFlagContext {
+  ADMIN_EXAM
+  MOCK_EXAM
+  STUDY_SESSION
+}
+
 model User {
   id String @id @default(cuid())
 
@@ -179,6 +185,7 @@ model User {
   updatedAt         DateTime           @updatedAt
   flashcards        Flashcard[]
   questionResponses QuestionResponse[]
+  questionFlags     QuestionFlag[]
   userStats         UserStats?
 
   @@map("users")
@@ -450,6 +457,7 @@ model Question {
   examQuestions ExamQuestion[]
   studySessionQuestions StudySessionQuestion[]
   questionResponses QuestionResponse[]
+  questionFlags     QuestionFlag[]
 
 }
 
@@ -639,6 +647,23 @@ model StudyAnswerAttempt {
   @@index([sessionQuestionId, attemptedAt])
 }
 
+model QuestionFlag {
+  id         String             @id @default(cuid())
+  userId     String
+  questionId String
+  context    QuestionFlagContext
+  contextId  String
+  isFlagged  Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId, context, contextId])
+  @@index([userId, context, contextId])
+}
+
 model ExamAttempt {
   id String @id @default(cuid())
 
@@ -656,8 +681,10 @@ model ExamAttempt {
   completedAt DateTime?
 
   // Array of answer records plus { type: "TIP", questionId, createdAt } records.
-  questionAttempts Json @default("[]")
-  user             User @relation(fields: [userId], references: [id])
+  questionAttempts       Json      @default("[]")
+  activeQuestionId       String?
+  activeQuestionStartedAt DateTime?
+  user                    User      @relation(fields: [userId], references: [id])
 
   exam Exam @relation(fields: [examId], references: [id])
 

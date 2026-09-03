@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, QuestionSourceType } from '@prisma/client';
+import { Prisma, QuestionFlagContext, QuestionSourceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateStudySessionDto, StudyQuestionType } from './dto/create-study-session.dto';
 
@@ -53,7 +53,7 @@ export class StudyService {
       orderBy: { updatedAt: 'desc' },
       include: {
         subject: { select: { id: true, name: true } },
-        questions: { select: { status: true } },
+        questions: { select: { status: true, attemptCount: true } },
       },
     }).then((sessions) => sessions.map((session) => ({
       id: session.id,
@@ -65,6 +65,7 @@ export class StudyService {
       status: session.status,
       questionCount: session.questions.length,
       correctCount: session.questions.filter(({ status }) => status === 'CORRECT').length,
+      attemptedCount: session.questions.filter(({ attemptCount }) => attemptCount > 0).length,
       startedAt: session.startedAt,
       completedAt: session.completedAt,
       createdAt: session.createdAt,
@@ -107,6 +108,12 @@ export class StudyService {
 
     if (!session) throw new NotFoundException('Study session not found.');
 
+    const flags = await this.prisma.questionFlag.findMany({
+      where: { userId, context: QuestionFlagContext.STUDY_SESSION, contextId: id, questionId: { in: session.questions.map((item) => item.questionId) } },
+      select: { questionId: true, isFlagged: true },
+    });
+    const flaggedQuestionIds = new Set(flags.filter((flag) => flag.isFlagged).map((flag) => flag.questionId));
+
     return {
       id: session.id,
       title: session.title,
@@ -126,9 +133,25 @@ export class StudyService {
         firstDisplayedAt: item.firstDisplayedAt,
         lastDisplayedAt: item.lastDisplayedAt,
         answeredAt: item.answeredAt,
+        isFlagged: flaggedQuestionIds.has(item.questionId),
         question: item.question,
       })),
     };
+  }
+
+  async setQuestionFlag(sessionId: string, questionId: string, userId: string, isFlagged: boolean) {
+    const item = await this.prisma.studySessionQuestion.findFirst({
+      where: { id: questionId, sessionId, session: { userId } },
+      select: { questionId: true },
+    });
+    if (!item) throw new NotFoundException('Study question not found.');
+
+    return this.prisma.questionFlag.upsert({
+      where: { userId_questionId_context_contextId: { userId, questionId: item.questionId, context: QuestionFlagContext.STUDY_SESSION, contextId: sessionId } },
+      create: { userId, questionId: item.questionId, context: QuestionFlagContext.STUDY_SESSION, contextId: sessionId, isFlagged },
+      update: { isFlagged },
+      select: { questionId: true, isFlagged: true },
+    });
   }
 
   async openQuestion(sessionId: string, questionId: string, userId: string) {
