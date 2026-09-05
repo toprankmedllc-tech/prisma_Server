@@ -14,6 +14,7 @@ import { AdminModule } from './admin/admin.module';
 import { QuestionQueueModule } from './question-queue/question-queue.module';
 import { AiReviewModule } from './ai-review/ai-review.module';
 import { StudyModule } from './study/study.module';
+import { HighlightModule } from './highlights/highlight.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { StudyModule } from './study/study.module';
     QuestionQueueModule,
     AiReviewModule,
     StudyModule,
+    HighlightModule,
   ],
 })
 export class AppModule { }

@@ -11,6 +11,8 @@ export interface ChatOptions {
     temperature?: number;
     maxTokens?: number;
     jsonMode?: boolean;
+    /** Override the default chat model (e.g. use a more capable reviewer model). */
+    model?: string;
 }
 
 export interface ChatResponse {
@@ -78,8 +80,9 @@ export class OpenRouterProvider {
 
     async chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResponse> {
         try {
+            const model = options?.model || this.chatModel;
             const requestBody: any = {
-                model: this.chatModel,
+                model,
                 messages: messages,
                 temperature: options?.temperature ?? 0.7,
                 max_tokens: options?.maxTokens ?? 4096,
@@ -90,7 +93,7 @@ export class OpenRouterProvider {
                 requestBody.response_format = { type: 'json_object' };
             }
 
-            this.logger.debug(`Sending chat request to OpenRouter with model: ${this.chatModel}`);
+            this.logger.debug(`Sending chat request to OpenRouter with model: ${model}`);
             this.logger.debug(`Messages count: ${messages.length}`);
             this.logger.debug(`JSON mode: ${options?.jsonMode || false}`);
 

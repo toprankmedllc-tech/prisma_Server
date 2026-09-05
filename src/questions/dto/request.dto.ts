@@ -34,6 +34,11 @@ export class GenerateQuestionsDto {
     @IsString()
     discipline?: string;
 
+    @ApiPropertyOptional({ description: 'Organ system from the USMLE syllabus (e.g. "Cardiovascular System", "Neurology")' })
+    @IsOptional()
+    @IsString()
+    organSystem?: string;
+
     @ApiProperty({ description: 'Question type: BUZZWORD (short, keyword-driven) or VIGNETTE (clinical scenario)' })
     @IsEnum(QuestionSourceType)
     sourceType!: QuestionSourceType;

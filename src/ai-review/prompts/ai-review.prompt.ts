@@ -86,7 +86,7 @@ If FAIL, provide specific details on what needs to be fixed so the generation sy
 export function buildAiReviewUserPrompt(
   question: any,
   context: string,
-  reviewContext?: { rejected?: boolean; reviewNotes?: unknown },
+  reviewContext?: { rejected?: boolean; reviewNotes?: unknown; stringent?: boolean },
 ): string {
   const choiceLines = question.choices
     .map((c: any) => `${c.letter || ''}. ${c.text} [${c.isCorrect ? 'CORRECT' : 'INCORRECT'}]`)

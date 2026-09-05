@@ -69,6 +69,7 @@ export class ExamService {
       secondsPerQuestion: e.secondsPerQuestion,
       durationMin: e.durationMin,
       selectionSettings: e.selectionSettings,
+      mode: e.mode,
       isActive: e.isActive,
       questionCount: e._count.questions,
       attemptCount: e._count.examAttempts,
@@ -268,7 +269,16 @@ export class ExamService {
   }
 
   async startMockAttempt(examId: string, userId: string) {
-    const exam = await this.prisma.exam.findFirst({ where: { id: examId, mode: 'STUDENT_MOCK', createdById: userId, isActive: true } });
+    const exam = await this.prisma.exam.findFirst({
+      where: {
+        id: examId,
+        isActive: true,
+        OR: [
+          { mode: 'STUDENT_MOCK', createdById: userId },
+          { mode: 'ADMIN' },
+        ],
+      },
+    });
     if (!exam) throw new NotFoundException('Mock exam not found');
     const existingAttempt = await this.prisma.examAttempt.findFirst({ where: { examId, userId, status: 'IN_PROGRESS' }, orderBy: { startedAt: 'desc' } });
     if (existingAttempt) return existingAttempt;
@@ -307,14 +317,25 @@ export class ExamService {
         },
       });
     }
+    const flagContext = attempt.exam.mode === 'ADMIN' ? QuestionFlagContext.ADMIN_EXAM : QuestionFlagContext.MOCK_EXAM;
     const flags = await this.prisma.questionFlag.findMany({
-      where: { userId, context: QuestionFlagContext.MOCK_EXAM, contextId: attempt.examId, questionId: { in: block.map(({ question }) => question.id) } },
+      where: { userId, context: flagContext, contextId: attempt.examId, questionId: { in: block.map(({ question }) => question.id) } },
       select: { questionId: true, isFlagged: true },
     });
     const flaggedQuestionIds = new Set(flags.filter((flag) => flag.isFlagged).map((flag) => flag.questionId));
+    const highlights = await this.prisma.questionHighlight.findMany({
+      where: { userId, context: flagContext, contextId: attempt.examId, questionId: { in: block.map(({ question }) => question.id) } },
+      select: { id: true, questionId: true, textRoot: true, start: true, end: true, text: true, color: true, note: true },
+    });
+    const highlightsByQuestion = new Map<string, any[]>();
+    for (const highlight of highlights) {
+      const list = highlightsByQuestion.get(highlight.questionId) || [];
+      list.push({ id: highlight.id, textRoot: highlight.textRoot, start: highlight.start, end: highlight.end, text: highlight.text, color: highlight.color, note: highlight.note });
+      highlightsByQuestion.set(highlight.questionId, list);
+    }
     const resumeIndex = block.findIndex(({ question }) => !answeredQuestions.some((answer) => answer.questionId === question.id));
     const wallet = await this.prisma.user.findUnique({ where: { id: userId }, select: { diamonds: true } });
-    return { examId: attempt.examId, attemptId, blockIndex: attempt.currentBlock, blockCount: attempt.exam.blockCount, blockStartedAt: attempt.blockStartedAt, secondsPerQuestion: attempt.exam.secondsPerQuestion, activeQuestionId: activeQuestion?.question.id || null, activeQuestionStartedAt, diamonds: wallet?.diamonds ?? 0, resumeIndex: resumeIndex === -1 ? 0 : resumeIndex, answeredByQuestion, questions: block.map(({ question }) => ({ ...question, isFlagged: flaggedQuestionIds.has(question.id), choices: question.choices.map(({ isCorrect, ...choice }) => choice) })) };
+    return { examId: attempt.examId, attemptId, blockIndex: attempt.currentBlock, blockCount: attempt.exam.blockCount, blockStartedAt: attempt.blockStartedAt, secondsPerQuestion: attempt.exam.secondsPerQuestion, activeQuestionId: activeQuestion?.question.id || null, activeQuestionStartedAt, diamonds: wallet?.diamonds ?? 0, resumeIndex: resumeIndex === -1 ? 0 : resumeIndex, answeredByQuestion, questions: block.map(({ question }) => ({ ...question, isFlagged: flaggedQuestionIds.has(question.id), highlights: highlightsByQuestion.get(question.id) || [], choices: question.choices.map(({ isCorrect, ...choice }) => choice) })) };
   }
 
   async submitMockAnswer(attemptId: string, questionId: string, userId: string, dto: SubmitMockAnswerDto) {
@@ -560,7 +581,20 @@ export class ExamService {
   }
 
   private async getOwnedAttempt(attemptId: string, userId: string) {
-    const attempt = await this.prisma.examAttempt.findFirst({ where: { id: attemptId, userId, exam: { mode: 'STUDENT_MOCK', createdById: userId } }, include: { exam: true } });
+    const attempt = await this.prisma.examAttempt.findFirst({
+      where: {
+        id: attemptId,
+        userId,
+        exam: {
+          isActive: true,
+          OR: [
+            { mode: 'STUDENT_MOCK', createdById: userId },
+            { mode: 'ADMIN' },
+          ],
+        },
+      },
+      include: { exam: true },
+    });
     if (!attempt) throw new NotFoundException('Mock attempt not found');
     return attempt;
   }

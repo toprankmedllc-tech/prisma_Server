@@ -210,6 +210,10 @@ export class QuestionGenerationService {
             'key points',
         ];
 
+        if (dto.organSystem) {
+            parts.push(dto.organSystem);
+        }
+
         if (dto.discipline) {
             parts.push(dto.discipline);
         }
@@ -237,6 +241,7 @@ export class QuestionGenerationService {
         const topicExtras: string[] = [];
         if (dto.subject) topicExtras.push(`SUBJECT: ${dto.subject}`);
         if (dto.discipline) topicExtras.push(`DISCIPLINE: ${dto.discipline}`);
+        if (dto.organSystem) topicExtras.push(`ORGAN SYSTEM: ${dto.organSystem}`);
 
         const topicExtrasStr = topicExtras.length > 0 ? topicExtras.join('\n') : '';
 

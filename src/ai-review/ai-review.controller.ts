@@ -83,6 +83,7 @@ export class AiReviewController {
     return this.aiReviewService.batchReview(dto.questionIds, {
       autoPublish: dto.autoPublish !== false,
       autoRegenerate: dto.autoRegenerate !== false,
+      stringent: dto.stringent ?? false,
     });
   }
 

@@ -26,6 +26,11 @@ export class BatchReviewQuestionsDto {
   @IsOptional()
   @IsBoolean()
   autoRegenerate?: boolean;
+
+  @ApiPropertyOptional({ description: 'Use the stringent reviewer model for strict quality gating (default: false)' })
+  @IsOptional()
+  @IsBoolean()
+  stringent?: boolean;
 }
 
 export class AiReviewFilterDto {

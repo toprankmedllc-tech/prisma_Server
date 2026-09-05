@@ -38,8 +38,14 @@ export class BurnoutAnalysisDto {
   @ApiProperty()
   burnoutRisk!: 'LOW' | 'MEDIUM' | 'HIGH';
 
+  @ApiProperty({ description: 'Burnout score on a 0-100 scale (higher = more burnout risk)' })
+  burnoutScore!: number;
+
   @ApiProperty()
   recommendation!: string;
+
+  @ApiProperty({ type: [String], description: 'Actionable tips to reduce burnout' })
+  tips!: string[];
 
   @ApiProperty()
   metrics!: {
@@ -75,4 +81,10 @@ export class ExamReadinessDto {
 
   @ApiProperty()
   overallReadiness!: number; // 0-100 scale
+
+  @ApiProperty({ description: 'Convenience top-level burnout score (0-100)' })
+  burnoutScore!: number;
+
+  @ApiProperty({ description: 'Convenience top-level burnout risk level' })
+  burnoutRisk!: 'LOW' | 'MEDIUM' | 'HIGH';
 }

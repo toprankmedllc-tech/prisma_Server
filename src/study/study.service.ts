@@ -114,6 +114,17 @@ export class StudyService {
     });
     const flaggedQuestionIds = new Set(flags.filter((flag) => flag.isFlagged).map((flag) => flag.questionId));
 
+    const highlights = await this.prisma.questionHighlight.findMany({
+      where: { userId, context: QuestionFlagContext.STUDY_SESSION, contextId: id, questionId: { in: session.questions.map((item) => item.questionId) } },
+      select: { id: true, questionId: true, textRoot: true, start: true, end: true, text: true, color: true, note: true },
+    });
+    const highlightsByQuestion = new Map<string, any[]>();
+    for (const highlight of highlights) {
+      const list = highlightsByQuestion.get(highlight.questionId) || [];
+      list.push({ id: highlight.id, textRoot: highlight.textRoot, start: highlight.start, end: highlight.end, text: highlight.text, color: highlight.color, note: highlight.note });
+      highlightsByQuestion.set(highlight.questionId, list);
+    }
+
     return {
       id: session.id,
       title: session.title,
@@ -134,6 +145,7 @@ export class StudyService {
         lastDisplayedAt: item.lastDisplayedAt,
         answeredAt: item.answeredAt,
         isFlagged: flaggedQuestionIds.has(item.questionId),
+        highlights: highlightsByQuestion.get(item.questionId) || [],
         question: item.question,
       })),
     };

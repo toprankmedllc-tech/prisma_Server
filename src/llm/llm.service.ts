@@ -96,7 +96,7 @@ export class LLMService {
     async generateWithPrompt(
         systemPrompt: string,
         userPrompt: string,
-        options?: { temperature?: number; maxTokens?: number; jsonMode?: boolean },
+        options?: { temperature?: number; maxTokens?: number; jsonMode?: boolean; model?: string },
     ): Promise<string> {
         const messages: ChatMessage[] = [
             { role: 'system', content: systemPrompt },
@@ -112,6 +112,7 @@ export class LLMService {
                 temperature: options?.temperature ?? 0.7,
                 maxTokens: options?.maxTokens ?? 4096,
                 jsonMode: options?.jsonMode ?? false,
+                model: options?.model,
             });
 
             if (response.tokenUsage) {
