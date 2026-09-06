@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AiReviewTrigger } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -460,6 +460,47 @@ export class AiReviewService {
     }
 
     // ============================================
+    // ============================================
+    // UPDATE AN EXISTING AI REVIEW (admin override)
+    // ============================================
+    async updateAiReview(reviewId: string, dto: Record<string, any>): Promise<AiReviewResultDto> {
+        const review = await this.prisma.aiReview.findUnique({ where: { id: reviewId } });
+        if (!review) {
+            throw new NotFoundException(`AI review with ID "${reviewId}" not found`);
+        }
+
+        const data: Record<string, any> = {};
+
+        if (dto.verdict !== undefined) data.verdict = dto.verdict;
+        if (dto.scores !== undefined && dto.scores !== null) {
+            data.usmleStyleScore = dto.scores.usmleStyle ?? review.usmleStyleScore;
+            data.medicalAccuracyScore = dto.scores.medicalAccuracy ?? review.medicalAccuracyScore;
+            data.hallucinationRiskScore = dto.scores.hallucinationRisk ?? review.hallucinationRiskScore;
+            data.explanationQualityScore = dto.scores.explanationQuality ?? review.explanationQualityScore;
+            data.clinicalRelevanceScore = dto.scores.clinicalRelevance ?? review.clinicalRelevanceScore;
+            data.grammaticalQualityScore = dto.scores.grammaticalQuality ?? review.grammaticalQualityScore;
+        }
+        if (dto.feedback !== undefined && dto.feedback !== null) {
+            data.usmleStyleFeedback = dto.feedback.usmleStyle ?? review.usmleStyleFeedback;
+            data.medicalAccuracyFeedback = dto.feedback.medicalAccuracy ?? review.medicalAccuracyFeedback;
+            data.hallucinationDetails = dto.feedback.hallucinationDetails ?? review.hallucinationDetails;
+            data.explanationQualityFeedback = dto.feedback.explanationQuality ?? review.explanationQualityFeedback;
+            data.clinicalRelevanceFeedback = dto.feedback.clinicalRelevance ?? review.clinicalRelevanceFeedback;
+            data.grammaticalFeedback = dto.feedback.grammatical ?? review.grammaticalFeedback;
+            data.generalFeedback = dto.feedback.general ?? review.generalFeedback;
+        }
+        if (dto.criticalIssues !== undefined) data.criticalIssues = dto.criticalIssues;
+        if (dto.humanRejectionContext !== undefined) data.humanRejectionContext = dto.humanRejectionContext;
+        if (dto.humanAiAgreement !== undefined) data.humanAiAgreement = dto.humanAiAgreement;
+
+        const updated = await this.prisma.aiReview.update({
+            where: { id: reviewId },
+            data,
+        });
+
+        return this.toResultDto(updated);
+    }
+
     // GET COMPLETE AI REVIEW HISTORY FOR A QUESTION
     // ============================================
     async getReviewHistory(questionId: string): Promise<AiReviewResultDto[]> {

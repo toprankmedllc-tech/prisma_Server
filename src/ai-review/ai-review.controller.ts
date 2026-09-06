@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Param,
   Query,
   Body,
@@ -187,5 +188,22 @@ export class AiReviewController {
   })
   async getReviewHistory(@Param('questionId') questionId: string): Promise<AiReviewResultDto[]> {
     return this.aiReviewService.getReviewHistory(questionId);
+  }
+
+  // ============================================
+  // UPDATE AN EXISTING AI REVIEW (admin override)
+  // ============================================
+  @Patch('admin/ai-review/:reviewId')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiOperation({
+    summary: 'Update an AI review record (admin override)',
+    description:
+      'Lets an admin override the verdict, scores, feedback, and critical issues of an existing AI review. Useful for correcting AI misjudgements after a human review.',
+  })
+  async updateAiReview(
+    @Param('reviewId') reviewId: string,
+    @Body() dto: Record<string, any>,
+  ): Promise<AiReviewResultDto> {
+    return this.aiReviewService.updateAiReview(reviewId, dto);
   }
 }

@@ -830,7 +830,8 @@ export class QuestionsService {
         }))._max.revisionNumber ?? 0;
 
         const scalarFields = [
-            'stem', 'leadInQuestion', 'explanation', 'topicId', 'difficulty', 'sourceType',
+            'stem', 'leadInQuestion', 'explanation', 'topicId', 'difficulty', 'source',
+            'sourceType',
             'system', 'discipline', 'patientProfile', 'chiefComplaint', 'keySymptoms',
             'physicalExam', 'mainClue', 'supportingClue', 'correctAnswerLetter',
             'correctAnswerText', 'stepByStepReasoning', 'educationalObjective', 'buzzwords',
@@ -880,7 +881,7 @@ export class QuestionsService {
             return tx.question.update({
                 where: { id },
                 data: { ...questionData, isPublished: false, reviewed: false, rejected: false, reviewedBy: null, reviewNotes: Prisma.JsonNull, qualityReview: { delete: {} } },
-                include: { topic: { include: { subject: true } }, choices: { orderBy: { order: 'asc' } }, wrongOptions: { orderBy: { order: 'asc' } }, vitals: true, qualityReview: true, tags: { include: { tag: true } } },
+                include: { topic: { include: { subject: true } }, choices: { orderBy: { order: 'asc' } }, wrongOptions: { orderBy: { order: 'asc' } }, vitals: true, qualityReview: true, tags: { include: { tag: true } }, aiReviews: { orderBy: [{ attemptNumber: 'desc' }, { createdAt: 'desc' }] } },
             });
         });
 
@@ -1239,6 +1240,9 @@ export class QuestionsService {
                 tags: {
                     include: { tag: true },
                 },
+                aiReviews: {
+                    orderBy: [{ attemptNumber: 'desc' }, { createdAt: 'desc' }],
+                },
             },
         });
 
@@ -1339,6 +1343,29 @@ export class QuestionsService {
                 }
                 : null,
             tags: question.tags.map((qt: any) => qt.tag.name),
+            aiReviews: question.aiReviews?.map((ar: any) => ({
+                id: ar.id,
+                attemptNumber: ar.attemptNumber,
+                verdict: ar.verdict,
+                usmleStyleScore: ar.usmleStyleScore,
+                medicalAccuracyScore: ar.medicalAccuracyScore,
+                hallucinationRiskScore: ar.hallucinationRiskScore,
+                explanationQualityScore: ar.explanationQualityScore,
+                clinicalRelevanceScore: ar.clinicalRelevanceScore,
+                grammaticalQualityScore: ar.grammaticalQualityScore,
+                usmleStyleFeedback: ar.usmleStyleFeedback,
+                medicalAccuracyFeedback: ar.medicalAccuracyFeedback,
+                hallucinationDetails: ar.hallucinationDetails,
+                explanationQualityFeedback: ar.explanationQualityFeedback,
+                clinicalRelevanceFeedback: ar.clinicalRelevanceFeedback,
+                grammaticalFeedback: ar.grammaticalFeedback,
+                generalFeedback: ar.generalFeedback,
+                reviewedByAi: ar.reviewedByAi,
+                criticalIssues: ar.criticalIssues,
+                humanRejectionContext: ar.humanRejectionContext,
+                humanAiAgreement: ar.humanAiAgreement,
+                createdAt: ar.createdAt,
+            })) || [],
         };
     }
 

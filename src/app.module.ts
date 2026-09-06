@@ -15,6 +15,7 @@ import { QuestionQueueModule } from './question-queue/question-queue.module';
 import { AiReviewModule } from './ai-review/ai-review.module';
 import { StudyModule } from './study/study.module';
 import { HighlightModule } from './highlights/highlight.module';
+import { UserAnalyticsModule } from './user-analytics/user-analytics.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { HighlightModule } from './highlights/highlight.module';
     AiReviewModule,
     StudyModule,
     HighlightModule,
+    UserAnalyticsModule,
   ],
 })
 export class AppModule { }

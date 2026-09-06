@@ -130,6 +130,30 @@ export class QuestionDetailDto {
     vitals!: VitalsResponseDto | null;
     qualityReview!: QualityReviewResponseDto | null;
     tags!: string[];
+
+    aiReviews?: Array<{
+        id: string;
+        attemptNumber: number;
+        verdict: 'PASS' | 'FAIL';
+        usmleStyleScore: number | null;
+        medicalAccuracyScore: number | null;
+        hallucinationRiskScore: number | null;
+        explanationQualityScore: number | null;
+        clinicalRelevanceScore: number | null;
+        grammaticalQualityScore: number | null;
+        usmleStyleFeedback: string | null;
+        medicalAccuracyFeedback: string | null;
+        hallucinationDetails: string | null;
+        explanationQualityFeedback: string | null;
+        clinicalRelevanceFeedback: string | null;
+        grammaticalFeedback: string | null;
+        generalFeedback: string | null;
+        reviewedByAi: string | null;
+        criticalIssues: unknown | null;
+        humanRejectionContext: unknown | null;
+        humanAiAgreement: boolean | null;
+        createdAt: Date;
+    }>;
 }
 
 export class GenerateQuestionsResponseDto {
