@@ -294,7 +294,7 @@ export class ExamService {
     const block = await this.prisma.examQuestion.findMany({
       where: { examId: attempt.examId, blockIndex: attempt.currentBlock },
       orderBy: { questionId: 'asc' },
-      include: { question: { include: { choices: { orderBy: { order: 'asc' } }, topic: { include: { subject: true } } } } },
+      include: { question: { include: { choices: { orderBy: { order: 'asc' } }, topic: { include: { subject: true } }, vitals: true } } },
     });
     const answers = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
     const answeredQuestions = answers.filter((answer) => answer.type !== 'TIP' && answer.blockIndex === attempt.currentBlock);
@@ -343,15 +343,16 @@ export class ExamService {
     if (attempt.status !== 'IN_PROGRESS') throw new BadRequestException('This attempt is no longer active.');
     const examQuestion = await this.prisma.examQuestion.findUnique({ where: { examId_questionId: { examId: attempt.examId, questionId } }, include: { question: { include: { choices: true } } } });
     if (!examQuestion || examQuestion.blockIndex !== attempt.currentBlock) throw new BadRequestException('Question is not in the active block.');
-    if (attempt.activeQuestionId && attempt.activeQuestionId !== questionId) throw new BadRequestException('Only the active question can be submitted.');
     const existing = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
     if (existing.some((answer) => answer.type !== 'TIP' && answer.questionId === questionId)) throw new BadRequestException('Question has already been answered or skipped.');
     const choice = dto.selectedChoiceId ? examQuestion.question.choices.find((item) => item.id === dto.selectedChoiceId) : undefined;
     if (dto.selectedChoiceId && !choice) throw new BadRequestException('Selected choice does not belong to this question.');
 
     const now = new Date();
-    const serverTimeSpentSec = attempt.activeQuestionStartedAt
-      ? Math.max(0, Math.floor((now.getTime() - attempt.activeQuestionStartedAt.getTime()) / 1000))
+    // The block-wide timer started when the block started; per-question elapsed time is
+    // measured against the block start so timing stays consistent with free navigation.
+    const serverTimeSpentSec = attempt.blockStartedAt
+      ? Math.max(0, Math.floor((now.getTime() - attempt.blockStartedAt.getTime()) / 1000))
       : 0;
     const timeSpentSec = Math.min(serverTimeSpentSec, attempt.exam.secondsPerQuestion);
     const answer = { questionId, selectedChoiceId: dto.selectedChoiceId || null, isCorrect: choice?.isCorrect === true, timeSpentSec, blockIndex: attempt.currentBlock, answeredAt: now.toISOString() };
