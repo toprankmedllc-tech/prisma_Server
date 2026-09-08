@@ -111,36 +111,14 @@ export class QuestionGenerationService {
 
             this.logger.log(`Retrieved ${retrievedChunks.length} chunks for context`);
 
-            // Step 2: Build the prompt based on question type
-            const userPrompt = this.buildUserPrompt(dto, context);
+            // Step 2: Generate questions in smaller batches to stay under the
+            // LLM token limit. Generating many complex VIGNETTE questions in a
+            // single call truncates the JSON (completion hits max_tokens).
+            // We chunk the request so each LLM call produces at most
+            // QUESTIONS_PER_BATCH questions, then merge the results.
             this.logger.log(`Generating ${dto.count} ${dto.sourceType} question(s) at ${dto.difficulty} difficulty`);
 
-            // Step 3: Call LLM with the RAG prompt
-            let llmResponse: string;
-            try {
-                llmResponse = await this.llmService.generateWithPrompt(
-                    RAG_QUESTION_SYSTEM_PROMPT,
-                    userPrompt,
-                    { temperature: 0.3, maxTokens: 8192, jsonMode: true },
-                );
-            } catch (llmError: any) {
-                this.logger.error(`LLM generation failed: ${llmError.message}`);
-                throw new Error(
-                    `AI generation failed: ${llmError.message}. The LLM service may be unavailable or rate-limited.`,
-                );
-            }
-
-            // Step 4: Parse the LLM response
-            let parsedResponse: GeneratedRichQuestion[];
-            try {
-                parsedResponse = this.parseLLMResponse(llmResponse, dto.count);
-            } catch (parseError: any) {
-                this.logger.error(`Failed to parse LLM response: ${parseError.message}`);
-                this.logger.debug(`Raw LLM response (first 500 chars): ${llmResponse.substring(0, 500)}`);
-                throw new Error(
-                    `Failed to parse AI response: ${parseError.message}. The generated content may not be in the expected format.`,
-                );
-            }
+            const parsedResponse = await this.generateInBatches(dto, context);
 
             // Step 5: Find or create the topic in PostgreSQL
             let topic: any;
@@ -196,6 +174,61 @@ export class QuestionGenerationService {
                 this.logger.warn(`Failed to queue AI review for question ${question.id}: ${error.message}`);
             }
         }
+    }
+
+    // ============================================
+    // GENERATE QUESTIONS IN SMALLER BATCHES
+    // ============================================
+    private readonly QUESTIONS_PER_BATCH = 4;
+
+    private async generateInBatches(
+        dto: GenerateQuestionsDto,
+        context: string,
+    ): Promise<GeneratedRichQuestion[]> {
+        const results: GeneratedRichQuestion[] = [];
+        let remaining = dto.count;
+
+        for (let offset = 0; offset < dto.count; offset += this.QUESTIONS_PER_BATCH) {
+            const batchSize = Math.min(this.QUESTIONS_PER_BATCH, remaining);
+            const batchDto = { ...dto, count: batchSize };
+
+            const userPrompt = this.buildUserPrompt(batchDto, context);
+            this.logger.log(
+                `Generating batch of ${batchSize} ${dto.sourceType} question(s) (offset ${offset})`,
+            );
+
+            let llmResponse: string;
+            try {
+                llmResponse = await this.llmService.generateWithPrompt(
+                    RAG_QUESTION_SYSTEM_PROMPT,
+                    userPrompt,
+                    { temperature: 0.3, maxTokens: 16384, jsonMode: true },
+                );
+            } catch (llmError: any) {
+                this.logger.error(`LLM generation failed for batch: ${llmError.message}`);
+                throw new Error(
+                    `AI generation failed: ${llmError.message}. The LLM service may be unavailable or rate-limited.`,
+                );
+            }
+
+            // Parse each batch, but accept fewer questions if the model
+            // truncated the output — salvage whatever is valid.
+            let batchQuestions: GeneratedRichQuestion[];
+            try {
+                batchQuestions = this.parseLLMResponse(llmResponse, batchSize);
+            } catch (parseError: any) {
+                this.logger.error(`Failed to parse LLM batch: ${parseError.message}`);
+                this.logger.debug(`Raw LLM response (first 500 chars): ${llmResponse.substring(0, 500)}`);
+                throw new Error(
+                    `Failed to parse AI response: ${parseError.message}. The generated content may not be in the expected format.`,
+                );
+            }
+
+            results.push(...batchQuestions);
+            remaining -= batchSize;
+        }
+
+        return results;
     }
 
     // ============================================
@@ -278,23 +311,42 @@ export class QuestionGenerationService {
             cleanedContent = cleanedContent.replace(/^```\n?/, '').replace(/\n?```$/, '');
         }
 
-        let parsed: LLMResponse;
+        let parsed: LLMResponse | null;
 
         try {
             parsed = JSON.parse(cleanedContent);
         } catch (error: any) {
-            const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
+            parsed = null;
+            // Attempt to repair common JSON issues (trailing commas, truncation)
+            // before giving up.
+            const repaired = this.tryRepairJson(cleanedContent);
+            if (repaired) {
                 try {
-                    parsed = JSON.parse(jsonMatch[0]);
+                    parsed = JSON.parse(repaired) as LLMResponse;
+                    this.logger.warn('Recovered LLM response via JSON repair');
                 } catch (e: any) {
-                    this.logger.error('Raw response that failed to parse:', cleanedContent.substring(0, 500));
-                    throw new Error(`Failed to parse LLM response as JSON: ${e.message}`);
+                    parsed = null;
                 }
-            } else {
-                this.logger.error('Raw response that failed to parse:', cleanedContent.substring(0, 500));
-                throw new Error(`Invalid JSON response from LLM: ${error.message}`);
             }
+
+            if (!parsed) {
+                const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    try {
+                        parsed = JSON.parse(jsonMatch[0]);
+                    } catch (e: any) {
+                        this.logger.error('Raw response that failed to parse:', cleanedContent.substring(0, 500));
+                        throw new Error(`Failed to parse LLM response as JSON: ${e.message}`);
+                    }
+                } else {
+                    this.logger.error('Raw response that failed to parse:', cleanedContent.substring(0, 500));
+                    throw new Error(`Invalid JSON response from LLM: ${error.message}`);
+                }
+            }
+        }
+
+        if (!parsed) {
+            throw new Error('Failed to parse LLM response: no valid JSON');
         }
 
         let questions: GeneratedRichQuestion[];
@@ -370,6 +422,58 @@ export class QuestionGenerationService {
 
         this.logger.log(`Successfully parsed and validated ${questions.length} questions`);
         return questions;
+    }
+
+    // ============================================
+    // JSON REPAIR — salvage truncated/malformed LLM responses
+    // ============================================
+    private tryRepairJson(content: string): string | null {
+        let text = content.trim();
+
+        // Escape literal control characters that appear inside JSON string
+        // values (e.g. a raw newline or tab emitted by the LLM). JSON forbids
+        // unescaped control chars (U+0000–U+001F) inside strings. We replace
+        // them with their escaped forms so the parser accepts them.
+        text = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, (ch) => {
+            const map: Record<string, string> = {
+                '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t',
+            };
+            return map[ch] || `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`;
+        });
+
+        // Remove trailing commas before ] or }
+        text = text.replace(/,\s*([\]}])/g, '$1');
+
+        // Count open vs closed brackets/braces.
+        const openBrackets = (text.match(/\[/g) || []).length;
+        const closeBrackets = (text.match(/\]/g) || []).length;
+        const openBraces = (text.match(/\{/g) || []).length;
+        const closeBraces = (text.match(/\}/g) || []).length;
+
+        // Close any unclosed arrays/objects.
+        for (let i = 0; i < openBrackets - closeBrackets; i++) text += ']';
+        for (let i = 0; i < openBraces - closeBraces; i++) text += '}';
+
+        try {
+            JSON.parse(text);
+            return text;
+        } catch {
+            // Try progressively removing trailing incomplete objects.
+            const candidates = [
+                text.replace(/,\s*\{[^{}]*$/, ''),
+                text.replace(/,\s*"wrongOptions"\s*:\s*\[\s*[^\]]*$/, ']'),
+                text.replace(/\{\s*"[^"]*"\s*:\s*"[^"]*"\s*$/, ''),
+            ];
+            for (const candidate of candidates) {
+                try {
+                    JSON.parse(candidate);
+                    return candidate;
+                } catch {
+                    // continue
+                }
+            }
+            return null;
+        }
     }
 
     private async saveRichQuestions(

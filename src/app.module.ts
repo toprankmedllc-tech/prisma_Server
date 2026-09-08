@@ -29,19 +29,28 @@ import { UserAnalyticsModule } from './user-analytics/user-analytics.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        const redisHost = configService.get<string>('REDIS_HOST', 'localhost');
-        const redisPort = configService.get<number>('REDIS_PORT', 6379);
-        const redisPassword = configService.get<string>('REDIS_PASSWORD', '');
-        const redisDb = configService.get<number>('REDIS_DB', 0);
+        // Prefer a full REDIS_URL (e.g. Upstash, Redis Cloud, Railway) when set.
+        // Otherwise fall back to individual REDIS_HOST/PORT/PASSWORD/DB fields.
+        const redisUrl = configService.get<string>('REDIS_URL', '');
 
-        const connection: Record<string, any> = {
-          host: redisHost,
-          port: redisPort,
-          db: redisDb,
-        };
+        let connection: Record<string, any>;
+        if (redisUrl) {
+          connection = { url: redisUrl };
+        } else {
+          const redisHost = configService.get<string>('REDIS_HOST', 'localhost');
+          const redisPort = configService.get<number>('REDIS_PORT', 6379);
+          const redisPassword = configService.get<string>('REDIS_PASSWORD', '');
+          const redisDb = configService.get<number>('REDIS_DB', 0);
 
-        if (redisPassword) {
-          connection.password = redisPassword;
+          connection = {
+            host: redisHost,
+            port: redisPort,
+            db: redisDb,
+          };
+
+          if (redisPassword) {
+            connection.password = redisPassword;
+          }
         }
 
         return {

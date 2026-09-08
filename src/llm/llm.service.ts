@@ -61,7 +61,7 @@ export class LLMService {
         try {
             const response = await this.openRouter.chat(messages, {
                 temperature: 0.3,
-                maxTokens: 4096,
+                maxTokens: 8192,
                 jsonMode: true,
             });
 
@@ -174,6 +174,21 @@ export class LLMService {
 
             throw new Error('Response does not contain valid question format');
         } catch (error: any) {
+            // Attempt to repair common JSON issues (trailing commas, truncation)
+            // before giving up. This handles LLM responses that are cut off or
+            // contain minor formatting errors.
+            const repaired = this.tryRepairJson(cleanedContent);
+            if (repaired) {
+                try {
+                    const parsed = JSON.parse(repaired);
+                    if (Array.isArray(parsed)) return parsed;
+                    if (parsed.questions && Array.isArray(parsed.questions)) return parsed.questions;
+                    if (parsed.questionStem) return [parsed];
+                } catch (e: any) {
+                    // fall through to regex extraction
+                }
+            }
+
             // Try to extract JSON array using regex
             const jsonMatch = cleanedContent.match(/\[[\s\S]*\]/);
             if (jsonMatch) {
@@ -186,6 +201,52 @@ export class LLMService {
 
             this.logger.error('Raw response that failed to parse:', cleanedContent);
             throw new Error(`Invalid JSON response from LLM: ${error.message}`);
+        }
+    }
+
+    /**
+     * Attempt to repair common LLM JSON issues:
+     * - Trailing commas before ] or }
+     * - Truncated arrays (missing closing brackets) — close them and drop incomplete objects
+     * - Truncated objects — close them
+     * Returns a repaired JSON string, or null if it can't be salvaged.
+     */
+    private tryRepairJson(content: string): string | null {
+        let text = content.trim();
+
+        // Remove trailing commas before ] or }
+        text = text.replace(/,\s*([\]}])/g, '$1');
+
+        // If the content is truncated (no closing bracket), try to close it.
+        const openBrackets = (text.match(/\[/g) || []).length;
+        const closeBrackets = (text.match(/\]/g) || []).length;
+        const openBraces = (text.match(/\{/g) || []).length;
+        const closeBraces = (text.match(/\}/g) || []).length;
+
+        // Close unclosed arrays/objects
+        for (let i = 0; i < openBrackets - closeBrackets; i++) text += ']';
+        for (let i = 0; i < openBraces - closeBraces; i++) text += '}';
+
+        // If we added closing brackets, the last object may be incomplete.
+        // Try parsing; if it fails, drop the trailing incomplete object.
+        try {
+            JSON.parse(text);
+            return text;
+        } catch {
+            // Try progressively removing trailing incomplete objects/array elements
+            const candidates = [
+                text.replace(/,\s*\{[^{}]*$/, ''),
+                text.replace(/\{\s*"[^"]*"\s*:\s*"[^"]*"\s*$/, ''),
+            ];
+            for (const candidate of candidates) {
+                try {
+                    JSON.parse(candidate);
+                    return candidate;
+                } catch {
+                    // continue
+                }
+            }
+            return null;
         }
     }
 
