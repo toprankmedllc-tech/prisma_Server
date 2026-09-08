@@ -59,14 +59,33 @@ export class BurnoutAnalysisDto {
 }
 
 export class KnowledgeHeatmapDto {
-  @ApiProperty()
-  organSystem!: OrganSystem;
+  @ApiProperty({ description: 'Organ system / subject name (e.g. Cardiology, Neurology)' })
+  systemName!: string;
 
-  @ApiProperty()
-  proficiency!: number; // 0-100 scale
+  @ApiProperty({ description: 'Proficiency percentage (0-100), or null if no data' })
+  percentage!: number | null;
+}
 
-  @ApiProperty()
-  lastAssessed!: Date;
+export class DailyActivityPatternDto {
+  @ApiProperty({ description: 'Date (YYYY-MM-DD)' })
+  date!: string;
+
+  @ApiProperty({ description: 'Daily accuracy score (0-100), or null if no activity that day' })
+  score!: number | null;
+}
+
+export class StreakInfoDto {
+  @ApiProperty({ description: 'Current streak in days' })
+  current!: number;
+
+  @ApiProperty({ description: 'Longest streak in days' })
+  longest!: number;
+
+  @ApiProperty({ description: 'Date of the last active day (YYYY-MM-DD) or null' })
+  lastActiveDate!: string | null;
+
+  @ApiProperty({ description: 'Whether the streak is still alive today' })
+  isActiveToday!: boolean;
 }
 
 export class ExamReadinessDto {
@@ -78,6 +97,12 @@ export class ExamReadinessDto {
 
   @ApiProperty()
   knowledgeHeatmap!: KnowledgeHeatmapDto[];
+
+  @ApiProperty({ type: [DailyActivityPatternDto], description: 'Daily accuracy pattern over the last 7 days' })
+  dailyActivityPatterns!: DailyActivityPatternDto[];
+
+  @ApiProperty({ description: 'Current and longest study streaks' })
+  streaks!: StreakInfoDto;
 
   @ApiProperty()
   overallReadiness!: number; // 0-100 scale

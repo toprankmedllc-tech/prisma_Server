@@ -378,9 +378,9 @@ export class ExamService {
 
     const completedBlockIndex = attempt.currentBlock;
     const blockResult = await this.getMockBlockReview(attempt, completedBlockIndex);
-    if (blockResult.answeredQuestions < blockResult.totalQuestions) {
-      throw new BadRequestException(`Answer all ${blockResult.totalQuestions} questions before completing this block.`);
-    }
+    // Business rule: a block/exam may be submitted at any time, from any question,
+    // even if not every question has been answered. Unanswered questions simply
+    // count as incorrect/blank.
     const nextBlock = completedBlockIndex + 1;
 
     if (nextBlock >= attempt.exam.blockCount) {

@@ -5,7 +5,8 @@ import {
   ScoreForecastDto,
   BurnoutAnalysisDto,
   KnowledgeHeatmapDto,
-  OrganSystem,
+  DailyActivityPatternDto,
+  StreakInfoDto,
 } from './dto/dashboard.dto';
 
 @Injectable()
@@ -17,10 +18,12 @@ export class DashboardService {
   async getExamReadiness(userId: string): Promise<ExamReadinessDto> {
     this.logger.log(`Generating exam readiness for user: ${userId}`);
 
-    const [scoreForecast, burnoutAnalysis, knowledgeHeatmap] = await Promise.all([
+    const [scoreForecast, burnoutAnalysis, knowledgeHeatmap, dailyActivityPatterns, streaks] = await Promise.all([
       this.calculateScoreForecast(userId),
       this.analyzeBurnoutRisk(userId),
       this.generateKnowledgeHeatmap(userId),
+      this.generateDailyActivityPatterns(userId),
+      this.generateStreaks(userId),
     ]);
 
     const overallReadiness = this.calculateOverallReadiness(scoreForecast, burnoutAnalysis, knowledgeHeatmap);
@@ -29,6 +32,8 @@ export class DashboardService {
       scoreForecast,
       burnoutAnalysis,
       knowledgeHeatmap,
+      dailyActivityPatterns,
+      streaks,
       overallReadiness,
       // Convenience top-level fields for the frontend meter
       burnoutScore: burnoutAnalysis.burnoutScore,
@@ -205,45 +210,247 @@ export class DashboardService {
   private async generateKnowledgeHeatmap(userId: string): Promise<KnowledgeHeatmapDto[]> {
     this.logger.debug(`Generating knowledge heatmap for user: ${userId}`);
 
-    // Get all question responses with their topics
-    const responses = await this.prisma.questionResponse.findMany({
+    // Gather real attempt data from study sessions and mock exams.
+    const [studyAttempts, examAttempts] = await Promise.all([
+      this.getStudyAttempts(userId),
+      this.getExamAttempts(userId),
+    ]);
+    const allAttempts = [...studyAttempts, ...this.flattenExamAttempts(examAttempts)];
+    if (allAttempts.length === 0) return [];
+
+    const questionIds = [...new Set(allAttempts.map((a) => a.questionId))];
+    const questions = await this.prisma.question.findMany({
+      where: { id: { in: questionIds } },
+      select: {
+        id: true,
+        topic: { select: { subject: { select: { name: true } } } },
+      },
+    });
+    const qMap = new Map(questions.map((q) => [q.id, q]));
+
+    // Group by organ system (using the question's subject as the organ system).
+    const organSystemProficiency: Record<string, { correct: number; total: number }> = {};
+    for (const a of allAttempts) {
+      const q = qMap.get(a.questionId);
+      if (!q) continue;
+      const systemName = q.topic.subject.name;
+      const entry = organSystemProficiency[systemName] || { correct: 0, total: 0 };
+      entry.total += 1;
+      if (a.isCorrect) entry.correct += 1;
+      organSystemProficiency[systemName] = entry;
+    }
+
+    // Convert to DTO format: { systemName, percentage }
+    const heatmap: KnowledgeHeatmapDto[] = Object.entries(organSystemProficiency).map(([systemName, stats]) => ({
+      systemName,
+      percentage: stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : null,
+    }));
+
+    // Sort by percentage (highest first)
+    heatmap.sort((a, b) => (b.percentage ?? 0) - (a.percentage ?? 0));
+
+    return heatmap;
+  }
+
+  private async getStudyAttempts(userId: string): Promise<Array<{ questionId: string; isCorrect: boolean }>> {
+    const sessions = await this.prisma.studySession.findMany({
       where: { userId },
-      include: { 
-        question: {
-          include: {
-            topic: true,
+      select: {
+        questions: {
+          select: {
+            questionId: true,
+            answerAttempts: { select: { isCorrect: true } },
           },
         },
       },
     });
-
-    // Group by organ system (using topic name as proxy)
-    const organSystemProficiency: Record<string, { correct: number; total: number }> = {};
-
-    responses.forEach(response => {
-      const topicName = response.question?.topic?.name || 'Unknown';
-      
-      if (!organSystemProficiency[topicName]) {
-        organSystemProficiency[topicName] = { correct: 0, total: 0 };
+    const attempts: Array<{ questionId: string; isCorrect: boolean }> = [];
+    for (const session of sessions) {
+      for (const sq of session.questions) {
+        for (const a of sq.answerAttempts) {
+          attempts.push({ questionId: sq.questionId, isCorrect: a.isCorrect });
+        }
       }
-      
-      organSystemProficiency[topicName].total += 1;
-      if (response.isCorrect) {
-        organSystemProficiency[topicName].correct += 1;
-      }
+    }
+    return attempts;
+  }
+
+  private async getExamAttempts(userId: string): Promise<Array<{ questionAttempts: unknown }>> {
+    return this.prisma.examAttempt.findMany({
+      where: { userId },
+      select: { questionAttempts: true },
     });
+  }
 
-    // Convert to DTO format
-    const heatmap: KnowledgeHeatmapDto[] = Object.entries(organSystemProficiency).map(([topic, stats]) => ({
-      organSystem: topic as OrganSystem,
-      proficiency: stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0,
-      lastAssessed: new Date(),
-    }));
+  private flattenExamAttempts(attempts: Array<{ questionAttempts: unknown }>): Array<{ questionId: string; isCorrect: boolean }> {
+    const flat: Array<{ questionId: string; isCorrect: boolean }> = [];
+    for (const attempt of attempts) {
+      const records = attempt.questionAttempts as Array<Record<string, any>>;
+      if (!Array.isArray(records)) continue;
+      for (const record of records) {
+        if (record.type === 'TIP' || !record.questionId) continue;
+        flat.push({ questionId: record.questionId, isCorrect: Boolean(record.isCorrect) });
+      }
+    }
+    return flat;
+  }
 
-    // Sort by proficiency (highest first)
-    heatmap.sort((a, b) => b.proficiency - a.proficiency);
+  // ============================================
+  // DAILY ACTIVITY PATTERNS — accuracy per day over the last 7 days
+  // ============================================
+  private async generateDailyActivityPatterns(userId: string): Promise<DailyActivityPatternDto[]> {
+    const days = 7;
+    const since = new Date();
+    since.setDate(since.getDate() - (days - 1));
+    since.setHours(0, 0, 0, 0);
 
-    return heatmap;
+    // Gather timestamped attempts from study sessions and mock exams.
+    const [studyAttempts, examAttempts] = await Promise.all([
+      this.getTimestampedStudyAttempts(userId),
+      this.getTimestampedExamAttempts(userId),
+    ]);
+    const allAttempts = [...studyAttempts, ...examAttempts];
+
+    // Group by date, tracking correct/total.
+    const dayMap = new Map<string, { correct: number; total: number }>();
+    for (const a of allAttempts) {
+      if (a.attemptedAt < since) continue;
+      const key = a.attemptedAt.toISOString().split('T')[0];
+      const entry = dayMap.get(key) || { correct: 0, total: 0 };
+      entry.total += 1;
+      if (a.isCorrect) entry.correct += 1;
+      dayMap.set(key, entry);
+    }
+
+    // Build a dense 7-day series.
+    const patterns: DailyActivityPatternDto[] = [];
+    const current = new Date(since);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    while (current <= today) {
+      const key = current.toISOString().split('T')[0];
+      const entry = dayMap.get(key);
+      patterns.push({
+        date: key,
+        score: entry && entry.total > 0 ? Math.round((entry.correct / entry.total) * 100) : null,
+      });
+      current.setDate(current.getDate() + 1);
+    }
+
+    return patterns;
+  }
+
+  // ============================================
+  // STREAKS — current and longest consecutive active days
+  // ============================================
+  private async generateStreaks(userId: string): Promise<StreakInfoDto> {
+    const [studyAttempts, examAttempts] = await Promise.all([
+      this.getTimestampedStudyAttempts(userId),
+      this.getTimestampedExamAttempts(userId),
+    ]);
+    const allAttempts = [...studyAttempts, ...examAttempts];
+
+    const activeDates = new Set<string>();
+    for (const a of allAttempts) {
+      activeDates.add(a.attemptedAt.toISOString().split('T')[0]);
+    }
+
+    if (activeDates.size === 0) {
+      return { current: 0, longest: 0, lastActiveDate: null, isActiveToday: false };
+    }
+
+    const sorted = [...activeDates].sort();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayKey = today.toISOString().split('T')[0];
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = yesterday.toISOString().split('T')[0];
+
+    // Longest streak
+    let longest = 1;
+    let run = 1;
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = new Date(sorted[i - 1]);
+      const curr = new Date(sorted[i]);
+      const diff = this.daysBetween(prev, curr);
+      if (diff === 1) {
+        run += 1;
+        longest = Math.max(longest, run);
+      } else {
+        run = 1;
+      }
+    }
+
+    // Current streak: walk backwards from today (or yesterday if today inactive)
+    let current = 0;
+    const isActiveToday = activeDates.has(todayKey);
+    let cursor = new Date(today);
+    if (!isActiveToday) {
+      cursor = new Date(yesterday);
+    }
+    while (activeDates.has(cursor.toISOString().split('T')[0])) {
+      current += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    return {
+      current,
+      longest,
+      lastActiveDate: sorted[sorted.length - 1],
+      isActiveToday,
+    };
+  }
+
+  private daysBetween(a: Date, b: Date): number {
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const aStart = new Date(a);
+    aStart.setHours(0, 0, 0, 0);
+    const bStart = new Date(b);
+    bStart.setHours(0, 0, 0, 0);
+    return Math.round((bStart.getTime() - aStart.getTime()) / msPerDay);
+  }
+
+  private async getTimestampedStudyAttempts(userId: string): Promise<Array<{ isCorrect: boolean; attemptedAt: Date }>> {
+    const sessions = await this.prisma.studySession.findMany({
+      where: { userId },
+      select: {
+        questions: {
+          select: {
+            answerAttempts: { select: { isCorrect: true, attemptedAt: true } },
+          },
+        },
+      },
+    });
+    const attempts: Array<{ isCorrect: boolean; attemptedAt: Date }> = [];
+    for (const session of sessions) {
+      for (const sq of session.questions) {
+        for (const a of sq.answerAttempts) {
+          attempts.push({ isCorrect: a.isCorrect, attemptedAt: a.attemptedAt });
+        }
+      }
+    }
+    return attempts;
+  }
+
+  private async getTimestampedExamAttempts(userId: string): Promise<Array<{ isCorrect: boolean; attemptedAt: Date }>> {
+    const attempts = await this.prisma.examAttempt.findMany({
+      where: { userId },
+      select: { questionAttempts: true },
+    });
+    const flat: Array<{ isCorrect: boolean; attemptedAt: Date }> = [];
+    for (const attempt of attempts) {
+      const records = attempt.questionAttempts as Array<Record<string, any>>;
+      if (!Array.isArray(records)) continue;
+      for (const record of records) {
+        if (record.type === 'TIP' || !record.questionId) continue;
+        flat.push({
+          isCorrect: Boolean(record.isCorrect),
+          attemptedAt: record.answeredAt ? new Date(record.answeredAt) : new Date(),
+        });
+      }
+    }
+    return flat;
   }
 
   private calculateTrend(questions: any[]): 'IMPROVING' | 'DECLINING' | 'STABLE' {
@@ -312,7 +519,7 @@ export class DashboardService {
     
     // Knowledge component
     const knowledgeComponent = knowledgeHeatmap.length > 0 ?
-      knowledgeHeatmap.reduce((sum, k) => sum + k.proficiency, 0) / knowledgeHeatmap.length : 50;
+      knowledgeHeatmap.reduce((sum, k) => sum + (k.percentage ?? 0), 0) / knowledgeHeatmap.length : 50;
 
     // Calculate weighted average
     const overallReadiness = (scoreComponent * 0.4 + burnoutComponent * 0.3 + knowledgeComponent * 0.3);

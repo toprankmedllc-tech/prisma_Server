@@ -343,6 +343,19 @@ model AiReview {
   humanRejectionContext Json?
   criticalIssues        Json?
   humanAiAgreement      Boolean?
+
+  // Human feedback on the AI review itself (is this review any good?)
+  humanComment  String? // Free-text comment from an admin on the AI review quality
+  humanAgree    Boolean? // Whether the human agrees with the AI verdict (true=agree, false=disagree)
+  humanReviewedBy String? // User ID of the admin who commented
+  humanReviewedAt  DateTime?
+
+  // Independent verification pass (second opinion)
+  verificationVerdict  String? // PASS / FAIL from the verifier
+  verificationAgrees   Boolean? // Whether verifier agreed with the primary verdict
+  verificationConfidence Int? // 0-100
+  verificationReason   String? // Verifier's reasoning
+
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

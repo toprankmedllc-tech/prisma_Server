@@ -152,6 +152,14 @@ export class QuestionDetailDto {
         criticalIssues: unknown | null;
         humanRejectionContext: unknown | null;
         humanAiAgreement: boolean | null;
+        humanComment: string | null;
+        humanAgree: boolean | null;
+        humanReviewedBy: string | null;
+        humanReviewedAt: Date | null;
+        verificationVerdict: string | null;
+        verificationAgrees: boolean | null;
+        verificationConfidence: number | null;
+        verificationReason: string | null;
         createdAt: Date;
     }>;
 }

@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiQuery, ApiCookieAuth } from '@nestjs/swagger'
 import { Request } from 'express';
 import { UserAnalyticsService } from './user-analytics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { UserAnalyticsDto } from './dto/user-analytics.dto';
+import { UserAnalyticsDto, OrganSystemHeatmapDto } from './dto/user-analytics.dto';
 
 interface RequestWithUser extends Request {
     user: { id: string };
@@ -42,29 +42,18 @@ export class MyAnalyticsController {
     }
 
     // ============================================
-    // ACTIVITY HEATMAP ONLY
+    // ORGAN SYSTEM HEATMAP — proficiency by organ system
     // ============================================
     @Get('heatmap')
     @ApiOperation({
-        summary: 'My activity heatmap',
+        summary: 'My organ-system heatmap',
         description:
-            'Returns a dense daily activity series (questions answered, correct, time spent) for the authenticated user.',
-    })
-    @ApiQuery({
-        name: 'days',
-        required: false,
-        type: Number,
-        description: 'Number of days to look back (default 90)',
+            'Returns the user proficiency per organ system (subject), e.g. [{ systemName: "Cardiology", percentage: 62 }]. Percentage is null when there is no data for that system.',
     })
     async getMyHeatmap(
         @Req() req: RequestWithUser,
-        @Query('days') days?: string,
-    ) {
-        const analytics = await this.userAnalyticsService.getUserAnalytics(
-            req.user.id,
-            days ? parseInt(days) : 90,
-        );
-        return analytics.heatmap;
+    ): Promise<OrganSystemHeatmapDto[]> {
+        return this.userAnalyticsService.getOrganSystemHeatmap(req.user.id);
     }
 
     // ============================================

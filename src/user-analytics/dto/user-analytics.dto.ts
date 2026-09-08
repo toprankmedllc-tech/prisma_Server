@@ -79,6 +79,17 @@ export class ActivityHeatmapDto {
 }
 
 // ============================================
+// ORGAN SYSTEM HEATMAP (proficiency by organ system)
+// ============================================
+export class OrganSystemHeatmapDto {
+    @ApiProperty({ description: 'Organ system / subject name (e.g. Cardiology, Neurology)' })
+    systemName!: string;
+
+    @ApiProperty({ description: 'Proficiency percentage (0-100), or null if no data' })
+    percentage!: number | null;
+}
+
+// ============================================
 // STREAKS
 // ============================================
 export class StreakInfoDto {

@@ -5,6 +5,7 @@ import {
     UserAnalyticsOverviewDto,
     ActivityHeatmapDto,
     ActivityHeatmapDayDto,
+    OrganSystemHeatmapDto,
     StreakInfoDto,
     TopicPerformanceDto,
     SubjectPerformanceDto,
@@ -85,6 +86,48 @@ export class UserAnalyticsService {
             mockExams: mockExamList,
             engagement,
         };
+    }
+
+    // ============================================
+    // ORGAN SYSTEM HEATMAP — proficiency by organ system
+    // ============================================
+    async getOrganSystemHeatmap(userId: string): Promise<OrganSystemHeatmapDto[]> {
+        // The controller already authenticated the user, so skip the redundant
+        // user lookup to save a DB round-trip.
+        const [studyAttempts, examAttempts] = await Promise.all([
+            this.getStudyAttempts(userId),
+            this.getExamAttempts(userId),
+        ]);
+        const allAttempts: FlatAttempt[] = [...studyAttempts, ...this.flattenExamAttempts(examAttempts)];
+        if (allAttempts.length === 0) return [];
+
+        const questionIds = [...new Set(allAttempts.map((a) => a.questionId))];
+        const questions = await this.prisma.question.findMany({
+            where: { id: { in: questionIds } },
+            select: {
+                id: true,
+                topic: { select: { subject: { select: { name: true } } } },
+            },
+        });
+        const qMap = new Map(questions.map((q) => [q.id, q]));
+
+        const systemMap = new Map<string, { attempted: number; correct: number }>();
+        for (const a of allAttempts) {
+            const q = qMap.get(a.questionId);
+            if (!q) continue;
+            const name = q.topic.subject.name;
+            const entry = systemMap.get(name) || { attempted: 0, correct: 0 };
+            entry.attempted += 1;
+            if (a.isCorrect) entry.correct += 1;
+            systemMap.set(name, entry);
+        }
+
+        return [...systemMap.entries()]
+            .map(([systemName, e]) => ({
+                systemName,
+                percentage: e.attempted ? Math.round((e.correct / e.attempted) * 100) : null,
+            }))
+            .sort((a, b) => (b.percentage ?? 0) - (a.percentage ?? 0));
     }
 
     // ============================================

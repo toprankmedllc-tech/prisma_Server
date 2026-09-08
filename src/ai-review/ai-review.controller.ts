@@ -201,9 +201,13 @@ export class AiReviewController {
       'Lets an admin override the verdict, scores, feedback, and critical issues of an existing AI review. Useful for correcting AI misjudgements after a human review.',
   })
   async updateAiReview(
+    @Req() req: RequestWithUser,
     @Param('reviewId') reviewId: string,
     @Body() dto: Record<string, any>,
   ): Promise<AiReviewResultDto> {
-    return this.aiReviewService.updateAiReview(reviewId, dto);
+    return this.aiReviewService.updateAiReview(reviewId, {
+      ...dto,
+      humanReviewedBy: dto.humanReviewedBy ?? req.user.id,
+    });
   }
 }

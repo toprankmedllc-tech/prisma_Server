@@ -155,6 +155,30 @@ export class AiReviewResultDto {
   @ApiPropertyOptional()
   humanAiAgreement?: boolean;
 
+  @ApiPropertyOptional({ description: 'Admin comment on the AI review quality' })
+  humanComment?: string;
+
+  @ApiPropertyOptional({ description: 'Whether the admin agrees with the AI verdict' })
+  humanAgree?: boolean;
+
+  @ApiPropertyOptional({ description: 'User ID of the admin who commented' })
+  humanReviewedBy?: string;
+
+  @ApiPropertyOptional({ description: 'When the admin commented' })
+  humanReviewedAt?: Date;
+
+  @ApiPropertyOptional({ description: 'Independent verifier verdict (PASS/FAIL)' })
+  verificationVerdict?: string;
+
+  @ApiPropertyOptional({ description: 'Whether the verifier agreed with the primary verdict' })
+  verificationAgrees?: boolean;
+
+  @ApiPropertyOptional({ description: 'Verifier confidence (0-100)' })
+  verificationConfidence?: number;
+
+  @ApiPropertyOptional({ description: 'Verifier reasoning' })
+  verificationReason?: string;
+
   @ApiProperty()
   createdAt!: Date;
 }

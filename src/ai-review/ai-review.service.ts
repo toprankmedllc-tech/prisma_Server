@@ -7,6 +7,7 @@ import { LLMService } from '../llm/llm.service';
 import { ChromaService } from '../chroma/chroma.service';
 import { AI_REVIEW_SYSTEM_PROMPT, buildAiReviewUserPrompt } from './prompts/ai-review.prompt';
 import { STRINGENT_REVIEW_SYSTEM_PROMPT } from './prompts/stringent-review.prompt';
+import { AI_REVIEW_VERIFY_SYSTEM_PROMPT, buildVerifyUserPrompt } from './prompts/ai-review-verify.prompt';
 import { detectStructuralIssues } from '../common/ai-review-utils';
 import {
     AiReviewResultDto,
@@ -150,6 +151,34 @@ export class AiReviewService {
         // 4. Parse the LLM response
         const reviewResult = this.parseReviewResponse(llmResponse);
 
+        // 4b. Verification pass — an independent second opinion that re-checks
+        // the primary verdict to catch false PASS/FAIL (the "rubber-stamp" problem).
+        let verification: { verdict: string; agreesWithFirstReviewer: boolean; confidence: number; reason: string } | null = null;
+        try {
+            const verifyPrompt = buildVerifyUserPrompt(question, {
+                verdict: reviewResult.verdict,
+                scores: reviewResult.scores as unknown as Record<string, number>,
+                feedback: reviewResult.feedback as unknown as Record<string, string | undefined>,
+            }, context);
+            const verifyResponse = await this.llmService.generateWithPrompt(
+                AI_REVIEW_VERIFY_SYSTEM_PROMPT,
+                verifyPrompt,
+                { temperature: 0.1, maxTokens: 1024, jsonMode: true },
+            );
+            verification = this.parseVerificationResponse(verifyResponse);
+        } catch (error: any) {
+            this.logger.warn(`Verification pass failed for question ${questionId}: ${error.message}`);
+            verification = null;
+        }
+
+        // If the independent verifier disagrees with a PASS, downgrade to FAIL.
+        // A disagreement on a FAIL is kept as FAIL (conservative), but recorded.
+        let finalVerdict = reviewResult.verdict;
+        if (verification && verification.verdict === 'FAIL' && reviewResult.verdict === 'PASS') {
+            finalVerdict = 'FAIL';
+            this.logger.warn(`Question ${questionId}: verifier downgraded PASS -> FAIL (${verification.reason})`);
+        }
+
         // 5. Save every AI review attempt. Re-reviews must remain auditable and
         // must never overwrite an earlier verdict.
         const previousReviewCount = await this.prisma.aiReview.count({
@@ -161,7 +190,7 @@ export class AiReviewService {
                 ? AiReviewTrigger.RE_REVIEW
                 : AiReviewTrigger.MANUAL;
         const reviewData = {
-            verdict: reviewResult.verdict,
+            verdict: finalVerdict,
             medicalAccuracyScore: reviewResult.scores.medicalAccuracy,
             hallucinationRiskScore: reviewResult.scores.hallucinationRisk,
             usmleStyleScore: reviewResult.scores.usmleStyle,
@@ -184,6 +213,10 @@ export class AiReviewService {
             criticalIssues: reviewResult.criticalIssues || undefined,
             humanRejectionContext: question.rejected ? question.reviewNotes ?? undefined : undefined,
             humanAiAgreement: question.rejected ? reviewResult.verdict === 'FAIL' : undefined,
+            verificationVerdict: verification?.verdict,
+            verificationAgrees: verification?.agreesWithFirstReviewer,
+            verificationConfidence: verification?.confidence,
+            verificationReason: verification?.reason,
         };
 
         const savedReview = await this.prisma.aiReview.create({
@@ -493,6 +526,14 @@ export class AiReviewService {
         if (dto.humanRejectionContext !== undefined) data.humanRejectionContext = dto.humanRejectionContext;
         if (dto.humanAiAgreement !== undefined) data.humanAiAgreement = dto.humanAiAgreement;
 
+        // Human feedback on the AI review itself
+        if (dto.humanComment !== undefined) data.humanComment = dto.humanComment;
+        if (dto.humanAgree !== undefined) data.humanAgree = dto.humanAgree;
+        if (dto.humanReviewedBy !== undefined) data.humanReviewedBy = dto.humanReviewedBy;
+        if (dto.humanComment !== undefined || dto.humanAgree !== undefined) {
+            data.humanReviewedAt = new Date();
+        }
+
         const updated = await this.prisma.aiReview.update({
             where: { id: reviewId },
             data,
@@ -543,6 +584,14 @@ export class AiReviewService {
             humanRejectionContext: review.humanRejectionContext ?? undefined,
             criticalIssues: review.criticalIssues ?? undefined,
             humanAiAgreement: review.humanAiAgreement ?? undefined,
+            humanComment: review.humanComment ?? undefined,
+            humanAgree: review.humanAgree ?? undefined,
+            humanReviewedBy: review.humanReviewedBy ?? undefined,
+            humanReviewedAt: review.humanReviewedAt ?? undefined,
+            verificationVerdict: review.verificationVerdict ?? undefined,
+            verificationAgrees: review.verificationAgrees ?? undefined,
+            verificationConfidence: review.verificationConfidence ?? undefined,
+            verificationReason: review.verificationReason ?? undefined,
             createdAt: review.createdAt,
         };
     }
@@ -603,6 +652,46 @@ export class AiReviewService {
             parsed.verdict === 'PASS' ? 'PASS' : 'FAIL';
 
         return { verdict, scores, feedback, criticalIssues: parsed.criticalIssues };
+    }
+
+    // ============================================
+    // PARSE VERIFICATION RESPONSE (second opinion)
+    // ============================================
+    private parseVerificationResponse(content: string): {
+        verdict: string;
+        agreesWithFirstReviewer: boolean;
+        confidence: number;
+        reason: string;
+    } {
+        let cleanedContent = content.trim();
+        if (cleanedContent.startsWith('```json')) {
+            cleanedContent = cleanedContent.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+        } else if (cleanedContent.startsWith('```')) {
+            cleanedContent = cleanedContent.replace(/^```\n?/, '').replace(/\n?```$/, '');
+        }
+
+        let parsed: any;
+        try {
+            parsed = JSON.parse(cleanedContent);
+        } catch (error: any) {
+            const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                try {
+                    parsed = JSON.parse(jsonMatch[0]);
+                } catch {
+                    throw new Error(`Failed to parse verification response as JSON: ${error.message}`);
+                }
+            } else {
+                throw new Error(`Invalid JSON response from verification LLM: ${error.message}`);
+            }
+        }
+
+        return {
+            verdict: parsed.verdict === 'PASS' ? 'PASS' : 'FAIL',
+            agreesWithFirstReviewer: parsed.agreesWithFirstReviewer === true,
+            confidence: Math.max(0, Math.min(100, Number(parsed.confidence) || 0)),
+            reason: parsed.reason || '',
+        };
     }
 }
 
