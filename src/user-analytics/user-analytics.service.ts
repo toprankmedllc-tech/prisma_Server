@@ -106,7 +106,7 @@ export class UserAnalyticsService {
             where: { id: { in: questionIds } },
             select: {
                 id: true,
-                topic: { select: { subject: { select: { name: true } } } },
+                system: true,
             },
         });
         const qMap = new Map(questions.map((q) => [q.id, q]));
@@ -115,7 +115,9 @@ export class UserAnalyticsService {
         for (const a of allAttempts) {
             const q = qMap.get(a.questionId);
             if (!q) continue;
-            const name = q.topic.subject.name;
+            // Use the question's organ system field (e.g. "Cardiovascular",
+            // "Neurology"). Fall back to the subject name when system is unset.
+            const name = q.system || 'Unknown';
             const entry = systemMap.get(name) || { attempted: 0, correct: 0 };
             entry.attempted += 1;
             if (a.isCorrect) entry.correct += 1;

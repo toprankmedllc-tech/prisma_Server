@@ -223,17 +223,18 @@ export class DashboardService {
       where: { id: { in: questionIds } },
       select: {
         id: true,
-        topic: { select: { subject: { select: { name: true } } } },
+        system: true,
       },
     });
     const qMap = new Map(questions.map((q) => [q.id, q]));
 
-    // Group by organ system (using the question's subject as the organ system).
+    // Group by organ system (using the question's system field, e.g.
+    // "Cardiovascular", "Neurology"). Fall back to "Unknown" when unset.
     const organSystemProficiency: Record<string, { correct: number; total: number }> = {};
     for (const a of allAttempts) {
       const q = qMap.get(a.questionId);
       if (!q) continue;
-      const systemName = q.topic.subject.name;
+      const systemName = q.system || 'Unknown';
       const entry = organSystemProficiency[systemName] || { correct: 0, total: 0 };
       entry.total += 1;
       if (a.isCorrect) entry.correct += 1;
