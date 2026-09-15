@@ -127,6 +127,23 @@ enum QuestionFlagContext {
   STUDY_SESSION
 }
 
+enum ArenaBattleStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum ArenaBattleMode {
+  HEAD_TO_HEAD
+  RAPID_FIRE
+}
+
+enum ArenaGuildRole {
+  LEADER
+  MEMBER
+}
+
 model User {
   id String @id @default(cuid())
 
@@ -188,6 +205,13 @@ model User {
   questionFlags      QuestionFlag[]
   questionHighlights QuestionHighlight[]
   userStats          UserStats?
+
+  // Arena relations
+  arenaBattlesAsPlayer1 ArenaBattle[]          @relation("ArenaPlayer1")
+  arenaBattlesAsPlayer2 ArenaBattle[]          @relation("ArenaPlayer2")
+  arenaAnswers          ArenaBattleAnswer[]
+  arenaLeaderboard      ArenaLeaderboardEntry?
+  arenaGuildMemberships ArenaGuildMember[]
 
   @@map("users")
 }
@@ -473,6 +497,8 @@ model Question {
   questionResponses     QuestionResponse[]
   questionFlags         QuestionFlag[]
   questionHighlights    QuestionHighlight[]
+  arenaBattleQuestions  ArenaBattleQuestion[]
+  arenaBattleAnswers    ArenaBattleAnswer[]
 }
 
 model QuestionRevision {
@@ -835,4 +861,127 @@ model Message {
   createdAt DateTime @default(now())
 
   @@index([conversationId])
+}
+
+// ============================================
+// ARENA — Competitive Study Battles
+// ============================================
+model ArenaBattle {
+  id String @id @default(cuid())
+
+  player1Id String
+  player2Id String
+
+  player1 User @relation("ArenaPlayer1", fields: [player1Id], references: [id])
+  player2 User @relation("ArenaPlayer2", fields: [player2Id], references: [id])
+
+  mode   ArenaBattleMode    @default(HEAD_TO_HEAD)
+  status ArenaBattleStatus  @default(PENDING)
+
+  // Battle duration in seconds (default 5 minutes)
+  durationSec Int @default(300)
+
+  // Per-player progress
+  player1Score Int @default(0)
+  player2Score Int @default(0)
+  player1Answered Int @default(0)
+  player2Answered Int @default(0)
+
+  // Winner user ID (null until completed)
+  winnerId String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  questions ArenaBattleQuestion[]
+  answers   ArenaBattleAnswer[]
+
+  @@index([player1Id])
+  @@index([player2Id])
+  @@index([status])
+}
+
+model ArenaBattleQuestion {
+  id        String @id @default(cuid())
+  battleId  String
+  questionId String
+
+  battle   ArenaBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id])
+
+  order Int @default(0)
+
+  @@unique([battleId, questionId])
+  @@index([battleId])
+}
+
+model ArenaBattleAnswer {
+  id        String @id @default(cuid())
+  battleId  String
+  questionId String
+  userId    String
+
+  battle   ArenaBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id])
+  user     User        @relation(fields: [userId], references: [id])
+
+  selectedChoiceId String?
+  isCorrect        Boolean @default(false)
+  timeSpentSec     Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([battleId, questionId, userId])
+  @@index([battleId])
+  @@index([userId])
+}
+
+model ArenaLeaderboardEntry {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  user User @relation(fields: [userId], references: [id])
+
+  wins   Int @default(0)
+  losses Int @default(0)
+  draws  Int @default(0)
+  points Int @default(0)
+
+  currentStreak Int @default(0)
+  longestStreak Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@index([points])
+}
+
+model ArenaGuild {
+  id String @id @default(cuid())
+
+  name        String @unique
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members ArenaGuildMember[]
+}
+
+model ArenaGuildMember {
+  id      String @id @default(cuid())
+  guildId String
+  userId  String
+
+  guild ArenaGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id])
+
+  role ArenaGuildRole @default(MEMBER)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([guildId, userId])
+  @@index([userId])
 }

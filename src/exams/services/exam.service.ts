@@ -19,14 +19,6 @@ export class ExamService {
     const totalQuestionsNeeded = blockCount * questionsPerBlock;
     const durationMin = Math.round((blockCount * questionsPerBlock * secondsPerQuestion) / 60);
 
-    // Validate there are enough questions
-    const availableCount = await this.countAvailableQuestions(dto.selectionSettings);
-    if (availableCount < totalQuestionsNeeded) {
-      throw new BadRequestException(
-        `Not enough questions available. Need ${totalQuestionsNeeded}, but only ${availableCount} match the selection criteria.`
-      );
-    }
-
     // Create the exam
     const exam = await this.prisma.exam.create({
       data: {
@@ -196,12 +188,6 @@ export class ExamService {
       onlyPublished: true,
     };
     const totalQuestionsNeeded = dto.blockCount * dto.questionsPerBlock;
-    const availableCount = await this.countAvailableQuestions(selectionSettings);
-    if (availableCount < totalQuestionsNeeded) {
-      throw new BadRequestException(
-        `Not enough published questions available. Need ${totalQuestionsNeeded}, but only ${availableCount} match your filters.`,
-      );
-    }
 
     const exam = await this.prisma.exam.create({
       data: {
@@ -660,16 +646,42 @@ export class ExamService {
     const totalNeeded = blockCount * questionsPerBlock;
     const where = this.buildQuestionWhere(selectionSettings);
 
-    // Get random questions from the pool
-    const allQuestions = await this.prisma.question.findMany({
+    // Get random questions from the filtered pool first.
+    const filteredQuestions = await this.prisma.question.findMany({
       where,
       select: { id: true },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Shuffle and pick
-    const shuffled = this.shuffleArray(allQuestions.map((q) => q.id));
-    const selected = shuffled.slice(0, totalNeeded);
+    const selected: string[] = [];
+    const used = new Set<string>();
+
+    // 1. Take as many matching questions as we can (shuffled).
+    const shuffledFiltered = this.shuffleArray(filteredQuestions.map((q) => q.id));
+    for (const id of shuffledFiltered) {
+      if (selected.length >= totalNeeded) break;
+      selected.push(id);
+      used.add(id);
+    }
+
+    // 2. If we still need more questions, fill the shortfall from ANY published
+    //    questions (mixed topics) so the exam always has the requested size.
+    if (selected.length < totalNeeded) {
+      const shortfall = totalNeeded - selected.length;
+      const fallbackQuestions = await this.prisma.question.findMany({
+        where: { isPublished: true, id: { notIn: [...used] } },
+        select: { id: true },
+        orderBy: { createdAt: 'desc' },
+        take: shortfall * 2, // fetch extra to allow for shuffling
+      });
+      const shuffledFallback = this.shuffleArray(fallbackQuestions.map((q) => q.id));
+      for (const id of shuffledFallback) {
+        if (selected.length >= totalNeeded) break;
+        if (used.has(id)) continue;
+        selected.push(id);
+        used.add(id);
+      }
+    }
 
     // Assign block indices
     const examQuestions = selected.map((questionId, index) => ({

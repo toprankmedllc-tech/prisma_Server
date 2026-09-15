@@ -16,6 +16,7 @@ import { AiReviewModule } from './ai-review/ai-review.module';
 import { StudyModule } from './study/study.module';
 import { HighlightModule } from './highlights/highlight.module';
 import { UserAnalyticsModule } from './user-analytics/user-analytics.module';
+import { ArenaModule } from './arena/arena.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { UserAnalyticsModule } from './user-analytics/user-analytics.module';
     StudyModule,
     HighlightModule,
     UserAnalyticsModule,
+    ArenaModule,
   ],
 })
 export class AppModule { }
