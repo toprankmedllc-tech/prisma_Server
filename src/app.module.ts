@@ -17,6 +17,7 @@ import { StudyModule } from './study/study.module';
 import { HighlightModule } from './highlights/highlight.module';
 import { UserAnalyticsModule } from './user-analytics/user-analytics.module';
 import { ArenaModule } from './arena/arena.module';
+import { SocialModule } from './social/social.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { ArenaModule } from './arena/arena.module';
     HighlightModule,
     UserAnalyticsModule,
     ArenaModule,
+    SocialModule,
   ],
 })
 export class AppModule { }

@@ -144,6 +144,12 @@ enum ArenaGuildRole {
   MEMBER
 }
 
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 model User {
   id String @id @default(cuid())
 
@@ -212,6 +218,17 @@ model User {
   arenaAnswers          ArenaBattleAnswer[]
   arenaLeaderboard      ArenaLeaderboardEntry?
   arenaGuildMemberships ArenaGuildMember[]
+  guildVotesCast        ArenaGuildVote[]       @relation("GuildVoter")
+  guildVotesReceived    ArenaGuildVote[]       @relation("GuildCandidate")
+  teamBattleMemberships ArenaTeamBattleMember[]
+  teamBattleAnswers     ArenaTeamBattleAnswer[]
+
+  // Friends & chat relations
+  sentFriendRequests     Friend[]        @relation("FriendRequester")
+  receivedFriendRequests Friend[]        @relation("FriendAddressee")
+  sentMessages           ChatMessage[]   @relation("ChatSender")
+  receivedMessages       ChatMessage[]   @relation("ChatReceiver")
+  guildMessages          GuildMessage[]
 
   @@map("users")
 }
@@ -499,6 +516,8 @@ model Question {
   questionHighlights    QuestionHighlight[]
   arenaBattleQuestions  ArenaBattleQuestion[]
   arenaBattleAnswers    ArenaBattleAnswer[]
+  arenaTeamBattleQuestions ArenaTeamBattleQuestion[]
+  arenaTeamBattleAnswers   ArenaTeamBattleAnswer[]
 }
 
 model QuestionRevision {
@@ -964,10 +983,18 @@ model ArenaGuild {
   name        String @unique
   description String?
 
+  // Current guild leader (user ID)
+  leaderId String?
+
+  // Collective guild points (sum of member arena points)
+  points Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   members ArenaGuildMember[]
+  votes   ArenaGuildVote[]
+  messages GuildMessage[]
 }
 
 model ArenaGuildMember {
@@ -980,8 +1007,166 @@ model ArenaGuildMember {
 
   role ArenaGuildRole @default(MEMBER)
 
+  // Whether the leader has selected this member for an upcoming competition
+  inCompetitionSquad Boolean @default(false)
+
   joinedAt DateTime @default(now())
 
   @@unique([guildId, userId])
   @@index([userId])
+}
+
+// A member's vote to elect a guild leader
+model ArenaGuildVote {
+  id      String @id @default(cuid())
+  guildId String
+  voterId String
+  candidateId String
+
+  guild     ArenaGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  voter     User       @relation("GuildVoter", fields: [voterId], references: [id])
+  candidate User       @relation("GuildCandidate", fields: [candidateId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([guildId, voterId])
+  @@index([guildId])
+}
+
+// ============================================
+// ARENA — TEAM BATTLES (4v4)
+// ============================================
+model ArenaTeamBattle {
+  id String @id @default(cuid())
+
+  // Team A (challenger) and Team B (opponent)
+  teamAId String
+  teamBId String
+
+  status ArenaBattleStatus @default(PENDING)
+
+  // Battle duration in seconds
+  durationSec Int @default(300)
+
+  // Team scores
+  teamAScore Int @default(0)
+  teamBScore Int @default(0)
+
+  // Winning team ID (null until completed)
+  winnerTeamId String?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members   ArenaTeamBattleMember[]
+  questions ArenaTeamBattleQuestion[]
+  answers   ArenaTeamBattleAnswer[]
+
+  @@index([teamAId])
+  @@index([teamBId])
+  @@index([status])
+}
+
+model ArenaTeamBattleMember {
+  id        String @id @default(cuid())
+  battleId  String
+  userId    String
+  teamId    String // "A" or "B"
+
+  battle ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id])
+
+  joinedAt DateTime @default(now())
+
+  @@unique([battleId, userId])
+  @@index([battleId])
+}
+
+model ArenaTeamBattleQuestion {
+  id         String @id @default(cuid())
+  battleId   String
+  questionId String
+
+  battle   ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  question Question        @relation(fields: [questionId], references: [id])
+
+  order Int @default(0)
+
+  @@unique([battleId, questionId])
+  @@index([battleId])
+}
+
+model ArenaTeamBattleAnswer {
+  id         String @id @default(cuid())
+  battleId   String
+  questionId String
+  userId     String
+  teamId     String // "A" or "B"
+
+  battle   ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  question Question        @relation(fields: [questionId], references: [id])
+  user     User            @relation(fields: [userId], references: [id])
+
+  selectedChoiceId String?
+  isCorrect        Boolean @default(false)
+  timeSpentSec     Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([battleId, questionId, userId])
+  @@index([battleId])
+}
+
+// ============================================
+// FRIENDS & CHAT
+// ============================================
+model Friend {
+  id          String       @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      FriendStatus @default(PENDING)
+
+  requester User @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+  @@index([requesterId])
+}
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String
+  readAt     DateTime?
+
+  sender   User @relation("ChatSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ChatReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([senderId, receiverId])
+  @@index([receiverId, readAt])
+}
+
+// Guild group chat message
+model GuildMessage {
+  id       String @id @default(cuid())
+  guildId  String
+  senderId String
+  content  String
+
+  guild  ArenaGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  sender User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([guildId, createdAt])
 }

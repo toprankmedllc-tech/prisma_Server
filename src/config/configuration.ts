@@ -1,5 +1,5 @@
 export default () => ({
-    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3000,
+    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 4000,
     
     database: {
         url: process.env.DATABASE_URL,
@@ -23,7 +23,7 @@ export default () => ({
     },
 
     redis: {
-        url: process.env.REDIS_URL,
+        url: process.env.REDIS_URL || "rediss://default:gQAAAAAAAaVyAAIgcDIxNTU0Mzk4NDlmZGM0NjYwYWI4YTA4YWE4YWRmODRkZA@probable-dolphin-107890.upstash.io:6379",
         host: process.env.REDIS_HOST || 'localhost',
         port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379,
         password: process.env.REDIS_PASSWORD,
