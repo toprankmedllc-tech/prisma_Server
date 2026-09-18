@@ -115,4 +115,7 @@ export class ExamReadinessDto {
 
   @ApiProperty({ description: 'Convenience top-level burnout risk level' })
   burnoutRisk!: 'LOW' | 'MEDIUM' | 'HIGH';
+
+  @ApiProperty({ description: 'Average time (in milliseconds) the user took to answer questions' })
+  avgResponseTime!: number;
 }

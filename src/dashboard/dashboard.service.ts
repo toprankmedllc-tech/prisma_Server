@@ -38,6 +38,7 @@ export class DashboardService {
       // Convenience top-level fields for the frontend meter
       burnoutScore: burnoutAnalysis.burnoutScore,
       burnoutRisk: burnoutAnalysis.burnoutRisk,
+      avgResponseTime: burnoutAnalysis.metrics.avgResponseTime,
     };
   }
 
@@ -53,15 +54,9 @@ export class DashboardService {
       where: { userId },
     });
 
-    // Get recent question responses (last 30 days)
+    // Get recent attempts (last 30 days) from study sessions and mock exams.
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentQuestions = await this.prisma.questionResponse.findMany({
-      where: { 
-        userId, 
-        createdAt: { gte: thirtyDaysAgo } 
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const recentAttempts = await this.getRecentAttempts(userId, thirtyDaysAgo);
 
     // Days until the target exam (used to tighten the confidence interval)
     const daysToExam = user?.targetTestDate
@@ -69,7 +64,7 @@ export class DashboardService {
       : null;
 
     // If no data, return a neutral baseline (50% pass probability)
-    if (!userStats || recentQuestions.length === 0) {
+    if (!userStats || recentAttempts.length === 0) {
       return {
         passProbability: 50,
         confidenceInterval: { lower: 35, upper: 65 },
@@ -79,9 +74,9 @@ export class DashboardService {
       };
     }
 
-    // Calculate accuracy from recent questions
-    const correctCount = recentQuestions.filter(q => q.isCorrect).length;
-    const accuracy = recentQuestions.length > 0 ? correctCount / recentQuestions.length : 0;
+    // Calculate accuracy from recent attempts
+    const correctCount = recentAttempts.filter(a => a.isCorrect).length;
+    const accuracy = recentAttempts.length > 0 ? correctCount / recentAttempts.length : 0;
 
     // Blend recent accuracy with the user's lifetime accuracy for stability.
     const blendedAccuracy = (accuracy * 0.7) + (userStats.accuracy * 0.3);
@@ -96,11 +91,11 @@ export class DashboardService {
       (1 / (1 + Math.exp(-steepness * (blendedAccuracy - passingThreshold)))) * 100,
     );
 
-    // Calculate trend (comparing first half vs second half of recent questions)
-    const trend = this.calculateTrend(recentQuestions);
+    // Calculate trend (comparing first half vs second half of recent attempts)
+    const trend = this.calculateTrend(recentAttempts);
 
     // Confidence interval width shrinks with more data and when the exam is near.
-    const sampleSizeFactor = Math.min(recentQuestions.length / 50, 1);
+    const sampleSizeFactor = Math.min(recentAttempts.length / 50, 1);
     const examProximityFactor = daysToExam !== null ? Math.min(daysToExam / 7, 1) : 1;
     // Base margin ~20pp, reduced by data volume and exam proximity (down to ~5pp within a week).
     const margin = Math.round(20 * (1 - sampleSizeFactor * 0.5) * (0.25 + 0.75 * examProximityFactor));
@@ -120,15 +115,9 @@ export class DashboardService {
   private async analyzeBurnoutRisk(userId: string): Promise<BurnoutAnalysisDto> {
     this.logger.debug(`Analyzing burnout risk for user: ${userId}`);
 
-    // Get responses from last 7 days
+    // Get attempts from last 7 days (study sessions + mock exams)
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const responses = await this.prisma.questionResponse.findMany({
-      where: {
-        userId,
-        createdAt: { gte: sevenDaysAgo },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const responses = await this.getRecentAttempts(userId, sevenDaysAgo);
 
     // If no data, return low risk with a neutral score
     if (responses.length === 0) {
@@ -146,8 +135,9 @@ export class DashboardService {
       };
     }
 
-    // Calculate metrics
-    const avgResponseTime = responses.reduce((sum, r) => sum + r.responseTime, 0) / responses.length;
+    // Calculate metrics. avgResponseTime is in milliseconds (converted from
+    // per-attempt seconds) to stay consistent with the burnout scoring below.
+    const avgResponseTime = responses.reduce((sum, r) => sum + r.timeSpentMs, 0) / responses.length;
     const errorRate = responses.filter(r => !r.isCorrect).length / responses.length;
 
     // Analyze session patterns
@@ -296,6 +286,83 @@ export class DashboardService {
       }
     }
     return attempts;
+  }
+
+  /**
+   * Fetch recent answer attempts (study sessions + mock exams) for a user,
+   * filtered to those on/after `since`. Each attempt carries correctness,
+   * the time spent (in milliseconds) and when it was answered.
+   */
+  private async getRecentAttempts(
+    userId: string,
+    since: Date,
+  ): Promise<Array<{ id: string; isCorrect: boolean; timeSpentMs: number; attemptedAt: Date }>> {
+    const [studyAttempts, examAttempts] = await Promise.all([
+      this.getRecentStudyAttempts(userId, since),
+      this.getRecentExamAttempts(userId, since),
+    ]);
+    return [...studyAttempts, ...examAttempts];
+  }
+
+  private async getRecentStudyAttempts(
+    userId: string,
+    since: Date,
+  ): Promise<Array<{ id: string; isCorrect: boolean; timeSpentMs: number; attemptedAt: Date }>> {
+    const sessions = await this.prisma.studySession.findMany({
+      where: { userId },
+      select: {
+        questions: {
+          select: {
+            questionId: true,
+            answerAttempts: {
+              where: { attemptedAt: { gte: since } },
+              select: { id: true, isCorrect: true, timeSpentSec: true, attemptedAt: true },
+            },
+          },
+        },
+      },
+    });
+    const attempts: Array<{ id: string; isCorrect: boolean; timeSpentMs: number; attemptedAt: Date }> = [];
+    for (const session of sessions) {
+      for (const sq of session.questions) {
+        for (const a of sq.answerAttempts) {
+          attempts.push({
+            id: a.id,
+            isCorrect: a.isCorrect,
+            timeSpentMs: a.timeSpentSec * 1000,
+            attemptedAt: a.attemptedAt,
+          });
+        }
+      }
+    }
+    return attempts;
+  }
+
+  private async getRecentExamAttempts(
+    userId: string,
+    since: Date,
+  ): Promise<Array<{ id: string; isCorrect: boolean; timeSpentMs: number; attemptedAt: Date }>> {
+    const attempts = await this.prisma.examAttempt.findMany({
+      where: { userId },
+      select: { id: true, questionAttempts: true },
+    });
+    const flat: Array<{ id: string; isCorrect: boolean; timeSpentMs: number; attemptedAt: Date }> = [];
+    for (const attempt of attempts) {
+      const records = attempt.questionAttempts as Array<Record<string, any>>;
+      if (!Array.isArray(records)) continue;
+      for (const record of records) {
+        if (record.type === 'TIP' || !record.questionId) continue;
+        const answeredAt = record.answeredAt ? new Date(record.answeredAt) : new Date();
+        if (answeredAt < since) continue;
+        flat.push({
+          id: `${attempt.id}-${record.questionId}`,
+          isCorrect: Boolean(record.isCorrect),
+          timeSpentMs: (Number(record.timeSpentSec) || 0) * 1000,
+          attemptedAt: answeredAt,
+        });
+      }
+    }
+    return flat;
   }
 
   private async getExamAttempts(userId: string): Promise<Array<{ questionAttempts: unknown }>> {
@@ -501,8 +568,8 @@ export class DashboardService {
     let currentSession: number[] = [responses[0].id];
 
     for (let i = 1; i < responses.length; i++) {
-      const timeDiff = new Date(responses[i].createdAt).getTime() - 
-                       new Date(responses[i-1].createdAt).getTime();
+      const timeDiff = new Date(responses[i].attemptedAt).getTime() - 
+                       new Date(responses[i-1].attemptedAt).getTime();
       
       if (timeDiff > 30 * 60 * 1000) { // 30 minutes
         sessions.push(currentSession);
@@ -520,8 +587,8 @@ export class DashboardService {
       
       // Find the actual responses for this session
       const sessionResponses = responses.filter(r => session.includes(r.id));
-      const duration = new Date(sessionResponses[sessionResponses.length-1].createdAt).getTime() - 
-                       new Date(sessionResponses[0].createdAt).getTime();
+      const duration = new Date(sessionResponses[sessionResponses.length-1].attemptedAt).getTime() - 
+                       new Date(sessionResponses[0].attemptedAt).getTime();
       
       return Math.max(1, Math.round(duration / 60000)); // Convert to minutes
     });
