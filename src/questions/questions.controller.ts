@@ -226,6 +226,38 @@ export class QuestionsController {
         return this.questionsService.getTopics(subjectId);
     }
 
+    // ============================================
+    // SUBJECTS BY SYSTEM: Get subjects filtered by organ system
+    // ============================================
+    @Get('subjects/by-system')
+    @ApiOperation({ summary: 'Get subjects by organ system', description: 'Returns subjects (disciplines) that have questions in the given organ system(s). Only includes topics that have questions in those system(s).' })
+    @ApiQuery({ name: 'system', required: true, type: [String], description: 'Organ system(s) to filter by (e.g. "Cardiovascular system")' })
+    async getSubjectsWithTopicsBySystem(
+        @Query('system') system?: string | string[],
+    ): Promise<any[]> {
+        const systems = system
+            ? Array.isArray(system) ? system : [system]
+            : [];
+        return this.questionsService.getSubjectsWithTopicsBySystem(systems);
+    }
+
+    // ============================================
+    // TOPICS BY SYSTEM: Get topics filtered by organ system and subject
+    // ============================================
+    @Get('topics/by-system')
+    @ApiOperation({ summary: 'Get topics by organ system and subject', description: 'Returns topics under a given subject that have questions in the specified organ system(s).' })
+    @ApiQuery({ name: 'subjectId', required: true, type: String, description: 'Subject (discipline) ID' })
+    @ApiQuery({ name: 'system', required: true, type: [String], description: 'Organ system(s) to filter by' })
+    async getTopicsBySystem(
+        @Query('subjectId') subjectId?: string,
+        @Query('system') system?: string | string[],
+    ): Promise<{ topics: { topicId: string; topic: string; questionCount: number }[]; totalTopics: number; totalQuestionsCount: number }> {
+        const systems = system
+            ? Array.isArray(system) ? system : [system]
+            : [];
+        return this.questionsService.getTopicsBySystem(subjectId!, systems);
+    }
+
 
 
     // ============================================
