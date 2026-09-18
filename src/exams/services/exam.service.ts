@@ -611,7 +611,7 @@ export class ExamService {
 
     if (settings.subjects?.length) {
       where.topic = {
-        subject: {
+        discipline: {
           name: { in: settings.subjects, mode: 'insensitive' },
         },
       };
@@ -633,7 +633,7 @@ export class ExamService {
     }
 
     if (settings.examType) {
-      where.discipline = { contains: settings.examType.replace(/_/g, ' '), mode: 'insensitive' };
+      where.discipline = { name: { contains: settings.examType.replace(/_/g, ' '), mode: 'insensitive' } };
     }
 
     if (settings.organSystems?.length) {
