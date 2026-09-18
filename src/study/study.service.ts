@@ -21,8 +21,12 @@ export class StudyService {
     const where: Prisma.QuestionWhereInput = {
       isPublished: dto.isPublished ?? true,
       difficulty: difficulties.length ? { in: difficulties } : undefined,
-      topic: { subjectId: { in: subjectIds } },
+      topic: {
+        subjectId: { in: subjectIds },
+        ...(dto.topics?.length ? { name: { in: dto.topics } } : {}),
+      },
       ...(dto.questionType !== StudyQuestionType.BOTH ? { sourceType: dto.questionType as QuestionSourceType } : {}),
+      ...(dto.organSystems?.length ? { system: { in: dto.organSystems } } : {}),
     };
 
     const available = await this.prisma.question.findMany({ where, select: { id: true } });

@@ -1752,4 +1752,22 @@ export class QuestionsService {
         this.logger.log(`Unpublished ${result.count} questions for discipline: ${discipline}`);
         return { count: result.count };
     }
+
+    // ============================================
+    // NEW: Get all distinct organ systems from questions
+    // ============================================
+    async getSystems(): Promise<{ systems: string[] }> {
+        const systemGroups = await this.prisma.question.groupBy({
+            by: ['system'],
+            where: { system: { not: null } },
+            _count: true,
+        });
+
+        const systems = systemGroups
+            .map(g => g.system)
+            .filter((s): s is string => s !== null)
+            .sort();
+
+        return { systems };
+    }
 }

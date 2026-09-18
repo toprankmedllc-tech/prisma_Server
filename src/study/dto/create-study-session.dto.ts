@@ -50,6 +50,18 @@ export class CreateStudySessionDto {
   @IsOptional()
   @IsBoolean()
   isPublished?: boolean;
+
+  @ApiPropertyOptional({ type: [String], description: 'Filter by organ system names' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  organSystems?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Filter by topic names' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  topics?: string[];
 }
 
 export class SubmitStudyAnswerDto {

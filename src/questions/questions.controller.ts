@@ -201,6 +201,15 @@ export class QuestionsController {
     }
 
     // ============================================
+    // SYSTEMS: Get all distinct organ systems from questions
+    // ============================================
+    @Get('systems')
+    @ApiOperation({ summary: 'Get all organ systems', description: 'Returns all distinct organ system values found in the Question table.' })
+    async getSystems(): Promise<{ systems: string[] }> {
+        return this.questionsService.getSystems();
+    }
+
+    // ============================================
     // SUBJECTS & TOPICS: Get all subjects with their topics
     // ============================================
     @Get('subjects')

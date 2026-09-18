@@ -36,6 +36,12 @@ export class ExamSelectionSettingsDto {
   @IsOptional()
   @IsString()
   examType?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by organ system names (e.g. "Cardiovascular system")' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  organSystems?: string[];
 }
 
 export class CreateExamDto {

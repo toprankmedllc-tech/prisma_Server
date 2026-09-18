@@ -7,10 +7,767 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id                     String                  @id @default(cuid())
+  email                  String                  @unique
+  passwordHash           String
+  firstName              String?
+  lastName               String?
+  studentType            StudentType?
+  targetExam             ExamType?
+  targetTestDate         DateTime?
+  graduationYear         Int?
+  university             String?
+  country                String?
+  timezone               String?
+  acceptedTerms          Boolean                 @default(false)
+  acceptedPrivacy        Boolean                 @default(false)
+  role                   Role                    @default(STUDENT)
+  isActive               Boolean                 @default(true)
+  emailVerifiedAt        DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  reviewedQuestions      String[]                @default([])
+  skippedQuestions       String[]                @default([])
+  assignedQuestions      String[]                @default([])
+  preferredSubjects      String[]                @default([])
+  diamonds               Int                     @default(10)
+  arenaBattlesAsPlayer1  ArenaBattle[]           @relation("ArenaPlayer1")
+  arenaBattlesAsPlayer2  ArenaBattle[]           @relation("ArenaPlayer2")
+  arenaAnswers           ArenaBattleAnswer[]
+  arenaGuildMemberships  ArenaGuildMember[]
+  guildVotesReceived     ArenaGuildVote[]        @relation("GuildCandidate")
+  guildVotesCast         ArenaGuildVote[]        @relation("GuildVoter")
+  arenaLeaderboard       ArenaLeaderboardEntry?
+  teamBattleAnswers      ArenaTeamBattleAnswer[]
+  teamBattleMemberships  ArenaTeamBattleMember[]
+  receivedMessages       ChatMessage[]           @relation("ChatReceiver")
+  sentMessages           ChatMessage[]           @relation("ChatSender")
+  conversations          Conversation[]
+  createdExams           Exam[]                  @relation("ExamCreator")
+  examAttempts           ExamAttempt[]
+  flashcards             Flashcard[]
+  receivedFriendRequests Friend[]                @relation("FriendAddressee")
+  sentFriendRequests     Friend[]                @relation("FriendRequester")
+  guildMessages          GuildMessage[]
+  attempts               QuestionAttempt[]
+  questionFlags          QuestionFlag[]
+  questionHighlights     QuestionHighlight[]
+  questionResponses      QuestionResponse[]
+  sessions               Session[]
+  studySessions          StudySession[]
+  userStats              UserStats?
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model Tag {
+  id        String        @id @default(cuid())
+  name      String        @unique
+  questions QuestionTag[]
+}
+
+model QuestionTag {
+  questionId String
+  tagId      String
+  question   Question @relation(fields: [questionId], references: [id])
+  tag        Tag      @relation(fields: [tagId], references: [id])
+
+  @@id([questionId, tagId])
+}
+
+model Choice {
+  id         String   @id @default(cuid())
+  questionId String
+  text       String
+  letter     String?
+  isCorrect  Boolean
+  order      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  question   Question @relation(fields: [questionId], references: [id])
+}
+
+model WrongOption {
+  id            String   @id @default(cuid())
+  questionId    String
+  letter        String
+  text          String
+  explanation   String?
+  buzzwordCombo String?
+  order         Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  question      Question @relation(fields: [questionId], references: [id])
+}
+
+model Vitals {
+  id              String   @id @default(cuid())
+  questionId      String   @unique
+  bloodPressure   String?
+  heartRate       Int?
+  pulseOximetry   Int?
+  temperature     Float?
+  respiratoryRate Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  question        Question @relation(fields: [questionId], references: [id])
+}
+
+model QualityReview {
+  id                 String   @id @default(cuid())
+  questionId         String   @unique
+  medicalAccuracy    String?
+  usmleStyle         String?
+  explanationQuality String?
+  originality        String?
+  grammar            String?
+  vignetteReview     String?
+  buzzwordReview     String?
+  reviewedBy         String?
+  reviewedAt         DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  question           Question @relation(fields: [questionId], references: [id])
+}
+
+model AiReview {
+  id                         String            @id @default(cuid())
+  questionId                 String
+  verdict                    AiReviewVerdict
+  usmleStyleScore            Int?
+  medicalAccuracyScore       Int?
+  hallucinationRiskScore     Int?
+  explanationQualityScore    Int?
+  clinicalRelevanceScore     Int?
+  grammaticalQualityScore    Int?
+  usmleStyleFeedback         String?
+  medicalAccuracyFeedback    String?
+  hallucinationDetails       String?
+  explanationQualityFeedback String?
+  clinicalRelevanceFeedback  String?
+  grammaticalFeedback        String?
+  generalFeedback            String?
+  reviewedByAi               String?
+  tokenUsage                 Int?
+  reviewDurationMs           Int?
+  replacementQuestionId      String?
+  createdAt                  DateTime          @default(now())
+  updatedAt                  DateTime          @updatedAt
+  revisionId                 String?
+  attemptNumber              Int               @default(1)
+  trigger                    AiReviewTrigger   @default(MANUAL)
+  promptVersion              String            @default("v1")
+  humanRejectionContext      Json?
+  criticalIssues             Json?
+  humanAiAgreement           Boolean?
+  humanComment               String?
+  humanAgree                 Boolean?
+  humanReviewedBy            String?
+  humanReviewedAt            DateTime?
+  verificationVerdict        String?
+  verificationAgrees         Boolean?
+  verificationConfidence     Int?
+  verificationReason         String?
+  question                   Question          @relation(fields: [questionId], references: [id])
+  revision                   QuestionRevision? @relation(fields: [revisionId], references: [id])
+
+  @@map("ai_reviews")
+}
+
+model GenerationJob {
+  id            String   @id @default(cuid())
+  userId        String?
+  params        Json
+  status        String   @default("queued")
+  questionIds   String[] @default([])
+  errorMessage  String?
+  questionCount Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Question {
+  id                         String                    @id @default(cuid())
+  stem                       String
+  leadInQuestion             String?
+  explanation                String
+  source                     QuestionSource            @default(HUMAN_GENERATED)
+  sourceType                 QuestionSourceType?
+  sourceRow                  Int?
+  sourceFile                 String?
+  qid                        String?
+  topicId                    String
+  system                     String?
+  discipline                 String?
+  subsystem                  String?
+  cognitiveLevel             CognitiveLevel?
+  difficulty                 Difficulty
+  trapType                   String?
+  patientProfile             String?
+  chiefComplaint             String?
+  keySymptoms                String[]                  @default([])
+  physicalExam               String?
+  mainClue                   String?
+  supportingClue             String?
+  correctAnswerLetter        String?
+  correctAnswerText          String?
+  stepByStepReasoning        String?
+  educationalObjective       String?
+  buzzwords                  String[]                  @default([])
+  buzzwordCombinationCorrect String?
+  relatedConcepts            String[]                  @default([])
+  suggestedImages            String?
+  importedAt                 DateTime?
+  importedBy                 String?
+  isPublished                Boolean                   @default(false)
+  reviewed                   Boolean                   @default(false)
+  reviewedBy                 String?
+  reviewNotes                Json?
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+  rejected                   Boolean                   @default(false)
+  originalQuestionId         String?
+  arenaBattleAnswers         ArenaBattleAnswer[]
+  arenaBattleQuestions       ArenaBattleQuestion[]
+  arenaTeamBattleAnswers     ArenaTeamBattleAnswer[]
+  arenaTeamBattleQuestions   ArenaTeamBattleQuestion[]
+  choices                    Choice[]
+  examQuestions              ExamQuestion[]
+  qualityReview              QualityReview?
+  originalQuestion           Question?                 @relation("QuestionReplacements", fields: [originalQuestionId], references: [id])
+  aiReplacements             Question[]                @relation("QuestionReplacements")
+  topic                      Topic                     @relation(fields: [topicId], references: [id])
+  attempts                   QuestionAttempt[]
+  questionFlags              QuestionFlag[]
+  questionHighlights         QuestionHighlight[]
+  references                 QuestionReference[]
+  questionResponses          QuestionResponse[]
+  revisions                  QuestionRevision[]
+  tags                       QuestionTag[]
+  studySessionQuestions      StudySessionQuestion[]
+  vitals                     Vitals?
+  wrongOptions               WrongOption[]
+  aiReviews                  AiReview[]
+}
+
+model QuestionRevision {
+  id             String               @id @default(cuid())
+  questionId     String
+  revisionNumber Int
+  revisionType   QuestionRevisionType
+  snapshot       Json
+  reason         String?
+  createdBy      String?
+  createdAt      DateTime             @default(now())
+  question       Question             @relation(fields: [questionId], references: [id])
+  aiReviews      AiReview[]
+
+  @@unique([questionId, revisionNumber])
+  @@index([questionId, createdAt])
+}
+
+model QuestionAttempt {
+  id               String   @id @default(cuid())
+  userId           String
+  questionId       String
+  selectedChoiceId String?
+  isCorrect        Boolean
+  timeSpentSec     Int
+  attemptedAt      DateTime @default(now())
+  question         Question @relation(fields: [questionId], references: [id])
+  user             User     @relation(fields: [userId], references: [id])
+}
+
+model QuestionReference {
+  questionId  String
+  referenceId String
+  question    Question  @relation(fields: [questionId], references: [id])
+  reference   Reference @relation(fields: [referenceId], references: [id])
+
+  @@id([questionId, referenceId])
+}
+
+model Reference {
+  id        String              @id @default(cuid())
+  title     String
+  source    String
+  url       String?
+  questions QuestionReference[]
+}
+
+model UserStats {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  totalQuestions Int      @default(0)
+  correctAnswers Int      @default(0)
+  accuracy       Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+}
+
+model QuestionResponse {
+  id           String   @id @default(uuid())
+  userId       String
+  questionId   String
+  isCorrect    Boolean
+  responseTime Int      @default(0)
+  createdAt    DateTime @default(now())
+  question     Question @relation(fields: [questionId], references: [id])
+  user         User     @relation(fields: [userId], references: [id])
+}
+
+model Document {
+  id        String          @id @default(cuid())
+  title     String
+  source    String?
+  status    DocumentStatus
+  createdAt DateTime        @default(now())
+  charCount Int?
+  content   String?
+  fileType  String?
+  metadata  Json?
+  updatedAt DateTime        @updatedAt
+  chunks    DocumentChunk[]
+}
+
+model DocumentChunk {
+  id         String   @id @default(cuid())
+  documentId String
+  chunkIndex Int
+  content    String
+  vectorId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id])
+}
+
+model ExamQuestion {
+  examId     String
+  questionId String
+  blockIndex Int      @default(0)
+  exam       Exam     @relation(fields: [examId], references: [id])
+  question   Question @relation(fields: [questionId], references: [id])
+
+  @@id([examId, questionId])
+  @@index([examId, blockIndex])
+}
+
+model StudySession {
+  id           String                 @id @default(cuid())
+  userId       String
+  title        String
+  description  String?
+  questionType QuestionSourceType?
+  difficulty   Difficulty?
+  subjectId    String?
+  status       StudySessionStatus     @default(IN_PROGRESS)
+  startedAt    DateTime               @default(now())
+  completedAt  DateTime?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  subject      Subject?               @relation(fields: [subjectId], references: [id])
+  user         User                   @relation(fields: [userId], references: [id])
+  questions    StudySessionQuestion[]
+
+  @@index([userId, status])
+}
+
+model StudySessionQuestion {
+  id                String                     @id @default(cuid())
+  sessionId         String
+  questionId        String
+  order             Int
+  status            StudySessionQuestionStatus @default(UNANSWERED)
+  firstDisplayedAt  DateTime?
+  lastDisplayedAt   DateTime?
+  totalTimeSpentSec Int                        @default(0)
+  attemptCount      Int                        @default(0)
+  pointsAwarded     Int                        @default(0)
+  answeredAt        DateTime?
+  answerAttempts    StudyAnswerAttempt[]
+  question          Question                   @relation(fields: [questionId], references: [id])
+  session           StudySession               @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, questionId])
+  @@unique([sessionId, order])
+  @@index([sessionId, status])
+}
+
+model StudyAnswerAttempt {
+  id                String               @id @default(cuid())
+  sessionQuestionId String
+  selectedChoiceId  String?
+  isCorrect         Boolean
+  timeSpentSec      Int                  @default(0)
+  attemptedAt       DateTime             @default(now())
+  sessionQuestion   StudySessionQuestion @relation(fields: [sessionQuestionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionQuestionId, attemptedAt])
+}
+
+model QuestionFlag {
+  id         String              @id @default(cuid())
+  userId     String
+  questionId String
+  context    QuestionFlagContext
+  contextId  String
+  isFlagged  Boolean             @default(true)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  question   Question            @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId, context, contextId])
+  @@index([userId, context, contextId])
+}
+
+model QuestionHighlight {
+  id         String              @id @default(cuid())
+  userId     String
+  questionId String
+  context    QuestionFlagContext
+  contextId  String
+  textRoot   String
+  start      Int
+  end        Int
+  text       String
+  color      String              @default("yellow")
+  note       String?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  question   Question            @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, questionId, context, contextId])
+}
+
+model ExamAttempt {
+  id                      String            @id @default(cuid())
+  examId                  String
+  userId                  String
+  score                   Float             @default(0)
+  startedAt               DateTime          @default(now())
+  completedAt             DateTime?
+  questionAttempts        Json              @default("[]")
+  correctAnswers          Int               @default(0)
+  answeredQuestions       Int               @default(0)
+  currentBlock            Int               @default(0)
+  status                  ExamAttemptStatus @default(IN_PROGRESS)
+  blockStartedAt          DateTime?
+  activeQuestionId        String?
+  activeQuestionStartedAt DateTime?
+  exam                    Exam              @relation(fields: [examId], references: [id])
+  user                    User              @relation(fields: [userId], references: [id])
+
+  @@index([examId])
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model Exam {
+  id                 String         @id @default(cuid())
+  title              String
+  durationMin        Int
+  createdAt          DateTime       @default(now())
+  blockCount         Int            @default(8)
+  description        String?
+  isActive           Boolean        @default(true)
+  questionsPerBlock  Int            @default(20)
+  secondsPerQuestion Int            @default(90)
+  selectionSettings  Json?
+  updatedAt          DateTime       @updatedAt
+  mode               ExamMode       @default(ADMIN)
+  createdById        String?
+  createdBy          User?          @relation("ExamCreator", fields: [createdById], references: [id])
+  examAttempts       ExamAttempt[]
+  questions          ExamQuestion[]
+}
+
+model Flashcard {
+  id         String    @id @default(cuid())
+  userId     String
+  front      String
+  back       String
+  nextReview DateTime?
+  easeFactor Float?
+  interval   Int?
+  user       User      @relation(fields: [userId], references: [id])
+}
+
+model Subject {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  description   String?
+  createdAt     DateTime       @default(now())
+  studySessions StudySession[]
+  topics        Topic[]
+}
+
+model Topic {
+  id        String     @id @default(cuid())
+  name      String
+  subjectId String
+  parentId  String?
+  createdAt DateTime   @default(now())
+  questions Question[]
+  parent    Topic?     @relation("TopicHierarchy", fields: [parentId], references: [id])
+  children  Topic[]    @relation("TopicHierarchy")
+  subject   Subject    @relation(fields: [subjectId], references: [id])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id])
+  messages  Message[]
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String
+  tokenCount     Int?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId])
+}
+
+model ArenaBattle {
+  id              String                @id @default(cuid())
+  player1Id       String
+  player2Id       String
+  mode            ArenaBattleMode       @default(HEAD_TO_HEAD)
+  status          ArenaBattleStatus     @default(PENDING)
+  player1Score    Int                   @default(0)
+  player2Score    Int                   @default(0)
+  player1Answered Int                   @default(0)
+  player2Answered Int                   @default(0)
+  winnerId        String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  durationSec     Int                   @default(300)
+  player1         User                  @relation("ArenaPlayer1", fields: [player1Id], references: [id])
+  player2         User                  @relation("ArenaPlayer2", fields: [player2Id], references: [id])
+  answers         ArenaBattleAnswer[]
+  questions       ArenaBattleQuestion[]
+
+  @@index([player1Id])
+  @@index([player2Id])
+  @@index([status])
+}
+
+model ArenaBattleQuestion {
+  id         String      @id @default(cuid())
+  battleId   String
+  questionId String
+  order      Int         @default(0)
+  battle     ArenaBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  question   Question    @relation(fields: [questionId], references: [id])
+
+  @@unique([battleId, questionId])
+  @@index([battleId])
+}
+
+model ArenaBattleAnswer {
+  id               String      @id @default(cuid())
+  battleId         String
+  questionId       String
+  userId           String
+  selectedChoiceId String?
+  isCorrect        Boolean     @default(false)
+  timeSpentSec     Int         @default(0)
+  createdAt        DateTime    @default(now())
+  battle           ArenaBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  question         Question    @relation(fields: [questionId], references: [id])
+  user             User        @relation(fields: [userId], references: [id])
+
+  @@unique([battleId, questionId, userId])
+  @@index([battleId])
+  @@index([userId])
+}
+
+model ArenaLeaderboardEntry {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  wins          Int      @default(0)
+  losses        Int      @default(0)
+  draws         Int      @default(0)
+  points        Int      @default(0)
+  currentStreak Int      @default(0)
+  longestStreak Int      @default(0)
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id])
+
+  @@index([points])
+}
+
+model ArenaGuild {
+  id          String             @id @default(cuid())
+  name        String             @unique
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  leaderId    String?
+  points      Int                @default(0)
+  members     ArenaGuildMember[]
+  votes       ArenaGuildVote[]
+  messages    GuildMessage[]
+}
+
+model ArenaGuildMember {
+  id                 String         @id @default(cuid())
+  guildId            String
+  userId             String
+  role               ArenaGuildRole @default(MEMBER)
+  joinedAt           DateTime       @default(now())
+  inCompetitionSquad Boolean        @default(false)
+  guild              ArenaGuild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  user               User           @relation(fields: [userId], references: [id])
+
+  @@unique([guildId, userId])
+  @@index([userId])
+}
+
+model ArenaGuildVote {
+  id          String     @id @default(cuid())
+  guildId     String
+  voterId     String
+  candidateId String
+  createdAt   DateTime   @default(now())
+  candidate   User       @relation("GuildCandidate", fields: [candidateId], references: [id])
+  guild       ArenaGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  voter       User       @relation("GuildVoter", fields: [voterId], references: [id])
+
+  @@unique([guildId, voterId])
+  @@index([guildId])
+}
+
+model ArenaTeamBattle {
+  id           String                    @id @default(cuid())
+  teamAId      String
+  teamBId      String
+  status       ArenaBattleStatus         @default(PENDING)
+  durationSec  Int                       @default(300)
+  teamAScore   Int                       @default(0)
+  teamBScore   Int                       @default(0)
+  winnerTeamId String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+  answers      ArenaTeamBattleAnswer[]
+  members      ArenaTeamBattleMember[]
+  questions    ArenaTeamBattleQuestion[]
+
+  @@index([teamAId])
+  @@index([teamBId])
+  @@index([status])
+}
+
+model ArenaTeamBattleMember {
+  id       String          @id @default(cuid())
+  battleId String
+  userId   String
+  teamId   String
+  joinedAt DateTime        @default(now())
+  battle   ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id])
+
+  @@unique([battleId, userId])
+  @@index([battleId])
+}
+
+model ArenaTeamBattleQuestion {
+  id         String          @id @default(cuid())
+  battleId   String
+  questionId String
+  order      Int             @default(0)
+  battle     ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  question   Question        @relation(fields: [questionId], references: [id])
+
+  @@unique([battleId, questionId])
+  @@index([battleId])
+}
+
+model ArenaTeamBattleAnswer {
+  id               String          @id @default(cuid())
+  battleId         String
+  questionId       String
+  userId           String
+  teamId           String
+  selectedChoiceId String?
+  isCorrect        Boolean         @default(false)
+  timeSpentSec     Int             @default(0)
+  createdAt        DateTime        @default(now())
+  battle           ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  question         Question        @relation(fields: [questionId], references: [id])
+  user             User            @relation(fields: [userId], references: [id])
+
+  @@unique([battleId, questionId, userId])
+  @@index([battleId])
+}
+
+model Friend {
+  id          String       @id @default(cuid())
+  requesterId String
+  addresseeId String
+  status      FriendStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  addressee   User         @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  requester   User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId])
+  @@index([requesterId])
+}
+
+model ChatMessage {
+  id         String    @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+  receiver   User      @relation("ChatReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender     User      @relation("ChatSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([senderId, receiverId])
+  @@index([receiverId, readAt])
+}
+
+model GuildMessage {
+  id        String     @id @default(cuid())
+  guildId   String
+  senderId  String
+  content   String
+  createdAt DateTime   @default(now())
+  guild     ArenaGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  sender    User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, createdAt])
+}
+
 enum Role {
   STUDENT
-  REVIEWER
   ADMIN
+  REVIEWER
 }
 
 enum StudentType {
@@ -148,1025 +905,4 @@ enum FriendStatus {
   PENDING
   ACCEPTED
   DECLINED
-}
-
-model User {
-  id String @id @default(cuid())
-
-  email        String @unique
-  passwordHash String
-
-  firstName String?
-  lastName  String?
-
-  studentType StudentType?
-
-  targetExam ExamType?
-
-  targetTestDate DateTime?
-
-  graduationYear Int?
-
-  university String?
-
-  country String?
-
-  timezone String?
-
-  acceptedTerms   Boolean @default(false)
-  acceptedPrivacy Boolean @default(false)
-
-  role Role @default(STUDENT)
-
-  // Initial in-app currency for AI study tips; future activities can award more.
-  diamonds Int @default(10)
-
-  isActive Boolean @default(true)
-
-  emailVerifiedAt DateTime?
-
-  // Track which questions the user has reviewed or skipped (for review dashboard)
-  reviewedQuestions String[] @default([])
-  skippedQuestions  String[] @default([])
-
-  // Track questions assigned to this user for review (exclusive assignment)
-  assignedQuestions String[] @default([])
-  // User's preferred subjects for question assignment
-  preferredSubjects String[] @default([])
-
-  sessions Session[]
-
-  attempts QuestionAttempt[]
-
-  examAttempts  ExamAttempt[]
-  createdExams  Exam[]         @relation("ExamCreator")
-  studySessions StudySession[]
-
-  conversations Conversation[]
-
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  flashcards         Flashcard[]
-  questionResponses  QuestionResponse[]
-  questionFlags      QuestionFlag[]
-  questionHighlights QuestionHighlight[]
-  userStats          UserStats?
-
-  // Arena relations
-  arenaBattlesAsPlayer1 ArenaBattle[]          @relation("ArenaPlayer1")
-  arenaBattlesAsPlayer2 ArenaBattle[]          @relation("ArenaPlayer2")
-  arenaAnswers          ArenaBattleAnswer[]
-  arenaLeaderboard      ArenaLeaderboardEntry?
-  arenaGuildMemberships ArenaGuildMember[]
-  guildVotesCast        ArenaGuildVote[]       @relation("GuildVoter")
-  guildVotesReceived    ArenaGuildVote[]       @relation("GuildCandidate")
-  teamBattleMemberships ArenaTeamBattleMember[]
-  teamBattleAnswers     ArenaTeamBattleAnswer[]
-
-  // Friends & chat relations
-  sentFriendRequests     Friend[]        @relation("FriendRequester")
-  receivedFriendRequests Friend[]        @relation("FriendAddressee")
-  sentMessages           ChatMessage[]   @relation("ChatSender")
-  receivedMessages       ChatMessage[]   @relation("ChatReceiver")
-  guildMessages          GuildMessage[]
-
-  @@map("users")
-}
-
-model Session {
-  id String @id @default(cuid())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  refreshToken String
-
-  expiresAt DateTime
-
-  createdAt DateTime @default(now())
-}
-
-// ============================================
-// ENHANCED QUESTION MODELS
-// ============================================
-
-model Tag {
-  id String @id @default(cuid())
-
-  name String @unique
-
-  questions QuestionTag[]
-}
-
-model QuestionTag {
-  questionId String
-  tagId      String
-
-  question Question @relation(fields: [questionId], references: [id])
-  tag      Tag      @relation(fields: [tagId], references: [id])
-
-  @@id([questionId, tagId])
-}
-
-model Choice {
-  id String @id @default(cuid())
-
-  questionId String
-
-  question Question @relation(fields: [questionId], references: [id])
-
-  text String
-
-  letter String? // A, B, C, D, E
-
-  isCorrect Boolean
-
-  order Int
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model WrongOption {
-  id String @id @default(cuid())
-
-  questionId String
-  question   Question @relation(fields: [questionId], references: [id])
-
-  letter        String // A, B, C, D
-  text          String
-  explanation   String?
-  buzzwordCombo String? // Only for buzzword questions
-
-  order Int
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Vitals {
-  id String @id @default(cuid())
-
-  questionId String   @unique
-  question   Question @relation(fields: [questionId], references: [id])
-
-  bloodPressure   String?
-  heartRate       Int?
-  pulseOximetry   Int?
-  temperature     Float?
-  respiratoryRate Int?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model QualityReview {
-  id String @id @default(cuid())
-
-  questionId String   @unique
-  question   Question @relation(fields: [questionId], references: [id])
-
-  medicalAccuracy    String?
-  usmleStyle         String?
-  explanationQuality String?
-  originality        String?
-  grammar            String?
-  vignetteReview     String?
-  buzzwordReview     String? // Only for buzzword questions
-
-  reviewedBy String? // User ID of the quality reviewer
-  reviewedAt DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-// ============================================
-// AI REVIEW MODEL (for automated quality review)
-// ============================================
-model AiReview {
-  id String @id @default(cuid())
-
-  questionId String
-  question   Question          @relation(fields: [questionId], references: [id])
-  revisionId String?
-  revision   QuestionRevision? @relation(fields: [revisionId], references: [id])
-
-  attemptNumber Int             @default(1)
-  trigger       AiReviewTrigger @default(MANUAL)
-  promptVersion String          @default("v1")
-
-  // Overall verdict
-  verdict AiReviewVerdict
-
-  // Structured scores (0-100)
-  usmleStyleScore         Int?
-  medicalAccuracyScore    Int?
-  hallucinationRiskScore  Int? // Higher = more hallucination risk
-  explanationQualityScore Int?
-  clinicalRelevanceScore  Int?
-  grammaticalQualityScore Int?
-
-  // Detailed feedback
-  usmleStyleFeedback         String? // Free-text
-  medicalAccuracyFeedback    String?
-  hallucinationDetails       String? // Specific hallucination claims
-  explanationQualityFeedback String?
-  clinicalRelevanceFeedback  String?
-  grammaticalFeedback        String?
-  generalFeedback            String? // Overall assessment
-
-  // Metadata
-  reviewedByAi     String? // Which model was used (e.g., "deepseek/deepseek-v4-flash")
-  tokenUsage       Int? // Tokens used for this review
-  reviewDurationMs Int? // How long the review took
-
-  // If FAILED: what was the action taken
-  replacementQuestionId String? // If a new question was generated to replace this one
-  humanRejectionContext Json?
-  criticalIssues        Json?
-  humanAiAgreement      Boolean?
-
-  // Human feedback on the AI review itself (is this review any good?)
-  humanComment  String? // Free-text comment from an admin on the AI review quality
-  humanAgree    Boolean? // Whether the human agrees with the AI verdict (true=agree, false=disagree)
-  humanReviewedBy String? // User ID of the admin who commented
-  humanReviewedAt  DateTime?
-
-  // Independent verification pass (second opinion)
-  verificationVerdict  String? // PASS / FAIL from the verifier
-  verificationAgrees   Boolean? // Whether verifier agreed with the primary verdict
-  verificationConfidence Int? // 0-100
-  verificationReason   String? // Verifier's reasoning
-
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@map("ai_reviews")
-}
-
-// ============================================
-// GENERATION JOB MODEL (for async background question generation)
-// ============================================
-model GenerationJob {
-  id String @id @default(cuid())
-
-  userId String? // User who triggered the generation
-
-  // The generation parameters as JSON (GenerateQuestionsDto)
-  params Json
-
-  status String @default("queued")
-
-  // Generated question IDs (if completed)
-  questionIds String[] @default([])
-
-  // Error message (if failed)
-  errorMessage String?
-
-  // Count of questions generated
-  questionCount Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model Question {
-  id String @id @default(cuid())
-
-  // === BASIC INFORMATION ===
-  stem           String
-  leadInQuestion String?
-  explanation    String
-
-  // === SOURCE & METADATA ===
-  source     QuestionSource      @default(HUMAN_GENERATED)
-  sourceType QuestionSourceType?
-  sourceRow  Int?
-  sourceFile String?
-  qid        String?
-
-  // === MEDICAL CLASSIFICATION ===
-  topicId String
-  topic   Topic  @relation(fields: [topicId], references: [id])
-
-  system         String?
-  discipline     String?
-  subsystem      String?
-  cognitiveLevel CognitiveLevel?
-  difficulty     Difficulty
-  trapType       String?
-
-  // === CLINICAL PRESENTATION ===
-  patientProfile String?
-  chiefComplaint String?
-  keySymptoms    String[] @default([])
-  physicalExam   String?
-
-  // === DIAGNOSTIC CLUES ===
-  mainClue       String?
-  supportingClue String?
-
-  // === ANSWER ===
-  correctAnswerLetter String? // A, B, C, D, E
-  correctAnswerText   String?
-
-  // === DETAILED EXPLANATIONS ===
-  stepByStepReasoning  String?
-  educationalObjective String?
-
-  // === BUZZWORD SPECIFIC ===
-  buzzwords                  String[] @default([])
-  buzzwordCombinationCorrect String?
-
-  // === TAGS & CONCEPTS ===
-  relatedConcepts String[] @default([])
-
-  // === IMAGES ===
-  suggestedImages String?
-
-  // === TIMESTAMPS ===
-  importedAt DateTime?
-  importedBy String?
-
-  // === RELATIONSHIPS ===
-  choices            Choice[]
-  wrongOptions       WrongOption[]
-  vitals             Vitals?
-  qualityReview      QualityReview?
-  aiReviews          AiReview[]
-  revisions          QuestionRevision[]
-  aiReplacements     Question[]          @relation("QuestionReplacements")
-  originalQuestionId String?
-  originalQuestion   Question?           @relation("QuestionReplacements", fields: [originalQuestionId], references: [id])
-  references         QuestionReference[]
-
-  tags QuestionTag[]
-
-  attempts QuestionAttempt[]
-
-  isPublished           Boolean                @default(false)
-  reviewed              Boolean                @default(false)
-  rejected              Boolean                @default(false)
-  reviewedBy            String? // User ID of the reviewer (audit trail)
-  reviewNotes           Json? // Flexible attribute-level review notes (e.g. { stem: "...", choices: { "choiceId": "..." }, explanation: "..." })
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  examQuestions         ExamQuestion[]
-  studySessionQuestions StudySessionQuestion[]
-  questionResponses     QuestionResponse[]
-  questionFlags         QuestionFlag[]
-  questionHighlights    QuestionHighlight[]
-  arenaBattleQuestions  ArenaBattleQuestion[]
-  arenaBattleAnswers    ArenaBattleAnswer[]
-  arenaTeamBattleQuestions ArenaTeamBattleQuestion[]
-  arenaTeamBattleAnswers   ArenaTeamBattleAnswer[]
-}
-
-model QuestionRevision {
-  id String @id @default(cuid())
-
-  questionId String
-  question   Question @relation(fields: [questionId], references: [id])
-
-  revisionNumber Int
-  revisionType   QuestionRevisionType
-  snapshot       Json
-  reason         String?
-  createdBy      String?
-  createdAt      DateTime             @default(now())
-
-  aiReviews AiReview[]
-
-  @@unique([questionId, revisionNumber])
-  @@index([questionId, createdAt])
-}
-
-model QuestionAttempt {
-  id String @id @default(cuid())
-
-  userId     String
-  questionId String
-
-  selectedChoiceId String?
-
-  isCorrect Boolean
-
-  timeSpentSec Int
-  user         User @relation(fields: [userId], references: [id])
-
-  question Question @relation(fields: [questionId], references: [id])
-
-  attemptedAt DateTime @default(now())
-}
-
-model QuestionReference {
-  questionId  String
-  referenceId String
-
-  question Question @relation(fields: [questionId], references: [id])
-
-  reference Reference @relation(fields: [referenceId], references: [id])
-
-  @@id([questionId, referenceId])
-}
-
-model Reference {
-  id String @id @default(cuid())
-
-  title  String
-  source String
-
-  url String?
-
-  questions QuestionReference[]
-}
-
-model UserStats {
-  id             String   @id @default(uuid())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id])
-  totalQuestions Int      @default(0)
-  correctAnswers Int      @default(0)
-  accuracy       Float    @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-
-model QuestionResponse {
-  id           String   @id @default(uuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id])
-  questionId   String
-  isCorrect    Boolean
-  responseTime Int      @default(0)
-  createdAt    DateTime @default(now())
-
-  question Question? @relation(fields: [questionId], references: [id])
-}
-
-model Document {
-  id String @id @default(cuid())
-
-  title String
-
-  content String? // Store the original content for re-ingestion
-  source  String?
-
-  fileType String? // e.g., 'markdown', 'text', 'html', 'pdf', 'docx'
-
-  charCount Int? // Total character count of original content
-
-  status DocumentStatus
-
-  metadata Json? // Store chunking config (chunkSize, overlap, strategy, etc.)
-
-  chunks    DocumentChunk[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-}
-
-model DocumentChunk {
-  id String @id @default(cuid())
-
-  documentId String
-  document   Document @relation(fields: [documentId], references: [id])
-
-  chunkIndex Int
-  content    String
-
-  vectorId String?
-
-  metadata  Json?
-  createdAt DateTime @default(now())
-}
-
-model ExamQuestion {
-  examId     String
-  questionId String
-  blockIndex Int    @default(0)
-
-  exam     Exam     @relation(fields: [examId], references: [id])
-  question Question @relation(fields: [questionId], references: [id])
-
-  @@id([examId, questionId])
-  @@index([examId, blockIndex])
-}
-
-model StudySession {
-  id           String              @id @default(cuid())
-  userId       String
-  title        String
-  description  String?
-  questionType QuestionSourceType?
-  difficulty   Difficulty?
-  subjectId    String?
-  status       StudySessionStatus  @default(IN_PROGRESS)
-  startedAt    DateTime            @default(now())
-  completedAt  DateTime?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-
-  user      User                   @relation(fields: [userId], references: [id])
-  subject   Subject?               @relation(fields: [subjectId], references: [id])
-  questions StudySessionQuestion[]
-
-  @@index([userId, status])
-}
-
-model StudySessionQuestion {
-  id                String                     @id @default(cuid())
-  sessionId         String
-  questionId        String
-  order             Int
-  status            StudySessionQuestionStatus @default(UNANSWERED)
-  firstDisplayedAt  DateTime?
-  lastDisplayedAt   DateTime?
-  totalTimeSpentSec Int                        @default(0)
-  attemptCount      Int                        @default(0)
-  pointsAwarded     Int                        @default(0)
-  answeredAt        DateTime?
-
-  session        StudySession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  question       Question             @relation(fields: [questionId], references: [id])
-  answerAttempts StudyAnswerAttempt[]
-
-  @@unique([sessionId, questionId])
-  @@unique([sessionId, order])
-  @@index([sessionId, status])
-}
-
-model StudyAnswerAttempt {
-  id                String   @id @default(cuid())
-  sessionQuestionId String
-  selectedChoiceId  String?
-  isCorrect         Boolean
-  timeSpentSec      Int      @default(0)
-  attemptedAt       DateTime @default(now())
-
-  sessionQuestion StudySessionQuestion @relation(fields: [sessionQuestionId], references: [id], onDelete: Cascade)
-
-  @@index([sessionQuestionId, attemptedAt])
-}
-
-model QuestionFlag {
-  id         String              @id @default(cuid())
-  userId     String
-  questionId String
-  context    QuestionFlagContext
-  contextId  String
-  isFlagged  Boolean             @default(true)
-  createdAt  DateTime            @default(now())
-  updatedAt  DateTime            @updatedAt
-
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, questionId, context, contextId])
-  @@index([userId, context, contextId])
-}
-
-model QuestionHighlight {
-  id         String              @id @default(cuid())
-  userId     String
-  questionId String
-  context    QuestionFlagContext
-  contextId  String
-  // Highlighted text range captured from a normalized question text root.
-  // Root can be "stem", "leadInQuestion", "explanation", or a choice index "choice-0".
-  textRoot   String
-  start      Int
-  end        Int
-  text       String
-  color      String              @default("yellow")
-  note       String?
-  createdAt  DateTime            @default(now())
-  updatedAt  DateTime            @updatedAt
-
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-
-  @@index([userId, questionId, context, contextId])
-}
-
-model ExamAttempt {
-  id String @id @default(cuid())
-
-  examId String
-  userId String
-
-  score             Float             @default(0)
-  correctAnswers    Int               @default(0)
-  answeredQuestions Int               @default(0)
-  currentBlock      Int               @default(0)
-  status            ExamAttemptStatus @default(IN_PROGRESS)
-  blockStartedAt    DateTime?
-
-  startedAt   DateTime  @default(now())
-  completedAt DateTime?
-
-  // Array of answer records plus { type: "TIP", questionId, createdAt } records.
-  questionAttempts        Json      @default("[]")
-  activeQuestionId        String?
-  activeQuestionStartedAt DateTime?
-  user                    User      @relation(fields: [userId], references: [id])
-
-  exam Exam @relation(fields: [examId], references: [id])
-
-  @@index([examId])
-  @@index([userId])
-  @@index([userId, status])
-}
-
-model Exam {
-  id String @id @default(cuid())
-
-  title       String
-  description String?
-
-  // Exam structure configuration
-  blockCount         Int @default(8)
-  questionsPerBlock  Int @default(20)
-  secondsPerQuestion Int @default(90)
-
-  // Computed total duration in minutes (blockCount * questionsPerBlock * secondsPerQuestion / 60)
-  durationMin Int
-
-  // Question selection settings stored as JSON
-  // { subjects?: string[], topics?: string[], difficulties?: string[], sourceTypes?: string[], onlyPublished?: boolean, examType?: string }
-  selectionSettings Json?
-
-  // Status: use isActive instead of delete (set to false to disable)
-  isActive    Boolean  @default(true)
-  mode        ExamMode @default(ADMIN)
-  createdById String?
-  createdBy   User?    @relation("ExamCreator", fields: [createdById], references: [id])
-
-  questions ExamQuestion[]
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
-
-  examAttempts ExamAttempt[]
-}
-
-model Flashcard {
-  id String @id @default(cuid())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  front String
-
-  back String
-
-  nextReview DateTime?
-
-  easeFactor Float?
-
-  interval Int?
-}
-
-model Subject {
-  id String @id @default(cuid())
-
-  name        String  @unique
-  description String?
-
-  topics        Topic[]
-  studySessions StudySession[]
-  createdAt     DateTime       @default(now())
-}
-
-model Topic {
-  id String @id @default(cuid())
-
-  name      String
-  subjectId String
-  subject   Subject @relation(fields: [subjectId], references: [id])
-
-  parentId String?
-
-  parent Topic? @relation("TopicHierarchy", fields: [parentId], references: [id])
-
-  children Topic[] @relation("TopicHierarchy")
-
-  questions Question[]
-  createdAt DateTime   @default(now())
-}
-
-model Conversation {
-  id String @id @default(cuid())
-
-  userId String
-
-  title String?
-
-  user User @relation(fields: [userId], references: [id])
-
-  messages Message[]
-
-  createdAt DateTime @default(now())
-}
-
-model Message {
-  id String @id @default(cuid())
-
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-
-  role MessageRole
-
-  content String
-
-  tokenCount Int?
-
-  createdAt DateTime @default(now())
-
-  @@index([conversationId])
-}
-
-// ============================================
-// ARENA — Competitive Study Battles
-// ============================================
-model ArenaBattle {
-  id String @id @default(cuid())
-
-  player1Id String
-  player2Id String
-
-  player1 User @relation("ArenaPlayer1", fields: [player1Id], references: [id])
-  player2 User @relation("ArenaPlayer2", fields: [player2Id], references: [id])
-
-  mode   ArenaBattleMode    @default(HEAD_TO_HEAD)
-  status ArenaBattleStatus  @default(PENDING)
-
-  // Battle duration in seconds (default 5 minutes)
-  durationSec Int @default(300)
-
-  // Per-player progress
-  player1Score Int @default(0)
-  player2Score Int @default(0)
-  player1Answered Int @default(0)
-  player2Answered Int @default(0)
-
-  // Winner user ID (null until completed)
-  winnerId String?
-
-  startedAt   DateTime?
-  completedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  questions ArenaBattleQuestion[]
-  answers   ArenaBattleAnswer[]
-
-  @@index([player1Id])
-  @@index([player2Id])
-  @@index([status])
-}
-
-model ArenaBattleQuestion {
-  id        String @id @default(cuid())
-  battleId  String
-  questionId String
-
-  battle   ArenaBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
-  question Question    @relation(fields: [questionId], references: [id])
-
-  order Int @default(0)
-
-  @@unique([battleId, questionId])
-  @@index([battleId])
-}
-
-model ArenaBattleAnswer {
-  id        String @id @default(cuid())
-  battleId  String
-  questionId String
-  userId    String
-
-  battle   ArenaBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
-  question Question    @relation(fields: [questionId], references: [id])
-  user     User        @relation(fields: [userId], references: [id])
-
-  selectedChoiceId String?
-  isCorrect        Boolean @default(false)
-  timeSpentSec     Int     @default(0)
-
-  createdAt DateTime @default(now())
-
-  @@unique([battleId, questionId, userId])
-  @@index([battleId])
-  @@index([userId])
-}
-
-model ArenaLeaderboardEntry {
-  id     String @id @default(cuid())
-  userId String @unique
-
-  user User @relation(fields: [userId], references: [id])
-
-  wins   Int @default(0)
-  losses Int @default(0)
-  draws  Int @default(0)
-  points Int @default(0)
-
-  currentStreak Int @default(0)
-  longestStreak Int @default(0)
-
-  updatedAt DateTime @updatedAt
-
-  @@index([points])
-}
-
-model ArenaGuild {
-  id String @id @default(cuid())
-
-  name        String @unique
-  description String?
-
-  // Current guild leader (user ID)
-  leaderId String?
-
-  // Collective guild points (sum of member arena points)
-  points Int @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  members ArenaGuildMember[]
-  votes   ArenaGuildVote[]
-  messages GuildMessage[]
-}
-
-model ArenaGuildMember {
-  id      String @id @default(cuid())
-  guildId String
-  userId  String
-
-  guild ArenaGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  user  User       @relation(fields: [userId], references: [id])
-
-  role ArenaGuildRole @default(MEMBER)
-
-  // Whether the leader has selected this member for an upcoming competition
-  inCompetitionSquad Boolean @default(false)
-
-  joinedAt DateTime @default(now())
-
-  @@unique([guildId, userId])
-  @@index([userId])
-}
-
-// A member's vote to elect a guild leader
-model ArenaGuildVote {
-  id      String @id @default(cuid())
-  guildId String
-  voterId String
-  candidateId String
-
-  guild     ArenaGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  voter     User       @relation("GuildVoter", fields: [voterId], references: [id])
-  candidate User       @relation("GuildCandidate", fields: [candidateId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@unique([guildId, voterId])
-  @@index([guildId])
-}
-
-// ============================================
-// ARENA — TEAM BATTLES (4v4)
-// ============================================
-model ArenaTeamBattle {
-  id String @id @default(cuid())
-
-  // Team A (challenger) and Team B (opponent)
-  teamAId String
-  teamBId String
-
-  status ArenaBattleStatus @default(PENDING)
-
-  // Battle duration in seconds
-  durationSec Int @default(300)
-
-  // Team scores
-  teamAScore Int @default(0)
-  teamBScore Int @default(0)
-
-  // Winning team ID (null until completed)
-  winnerTeamId String?
-
-  startedAt   DateTime?
-  completedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  members   ArenaTeamBattleMember[]
-  questions ArenaTeamBattleQuestion[]
-  answers   ArenaTeamBattleAnswer[]
-
-  @@index([teamAId])
-  @@index([teamBId])
-  @@index([status])
-}
-
-model ArenaTeamBattleMember {
-  id        String @id @default(cuid())
-  battleId  String
-  userId    String
-  teamId    String // "A" or "B"
-
-  battle ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
-  user   User            @relation(fields: [userId], references: [id])
-
-  joinedAt DateTime @default(now())
-
-  @@unique([battleId, userId])
-  @@index([battleId])
-}
-
-model ArenaTeamBattleQuestion {
-  id         String @id @default(cuid())
-  battleId   String
-  questionId String
-
-  battle   ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
-  question Question        @relation(fields: [questionId], references: [id])
-
-  order Int @default(0)
-
-  @@unique([battleId, questionId])
-  @@index([battleId])
-}
-
-model ArenaTeamBattleAnswer {
-  id         String @id @default(cuid())
-  battleId   String
-  questionId String
-  userId     String
-  teamId     String // "A" or "B"
-
-  battle   ArenaTeamBattle @relation(fields: [battleId], references: [id], onDelete: Cascade)
-  question Question        @relation(fields: [questionId], references: [id])
-  user     User            @relation(fields: [userId], references: [id])
-
-  selectedChoiceId String?
-  isCorrect        Boolean @default(false)
-  timeSpentSec     Int     @default(0)
-
-  createdAt DateTime @default(now())
-
-  @@unique([battleId, questionId, userId])
-  @@index([battleId])
-}
-
-// ============================================
-// FRIENDS & CHAT
-// ============================================
-model Friend {
-  id          String       @id @default(cuid())
-  requesterId String
-  addresseeId String
-  status      FriendStatus @default(PENDING)
-
-  requester User @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
-  addressee User @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([requesterId, addresseeId])
-  @@index([addresseeId])
-  @@index([requesterId])
-}
-
-model ChatMessage {
-  id         String   @id @default(cuid())
-  senderId   String
-  receiverId String
-  content    String
-  readAt     DateTime?
-
-  sender   User @relation("ChatSender", fields: [senderId], references: [id], onDelete: Cascade)
-  receiver User @relation("ChatReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@index([senderId, receiverId])
-  @@index([receiverId, readAt])
-}
-
-// Guild group chat message
-model GuildMessage {
-  id       String @id @default(cuid())
-  guildId  String
-  senderId String
-  content  String
-
-  guild  ArenaGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  sender User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-
-  @@index([guildId, createdAt])
 }

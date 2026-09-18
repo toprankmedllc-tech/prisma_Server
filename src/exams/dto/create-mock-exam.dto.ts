@@ -44,6 +44,18 @@ export class CreateMockExamDto {
   @Min(10)
   @Max(600)
   secondsPerQuestion!: number;
+
+  @ApiPropertyOptional({ type: [String], description: 'Filter by organ system names' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  organSystems?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Filter by topic names' })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  topics?: string[];
 }
 
 export class MockChatMessageDto {
