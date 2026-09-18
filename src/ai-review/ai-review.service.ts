@@ -8,7 +8,6 @@ import { ChromaService } from '../chroma/chroma.service';
 import { AI_REVIEW_SYSTEM_PROMPT, buildAiReviewUserPrompt } from './prompts/ai-review.prompt';
 import { STRINGENT_REVIEW_SYSTEM_PROMPT } from './prompts/stringent-review.prompt';
 import { AI_REVIEW_VERIFY_SYSTEM_PROMPT, buildVerifyUserPrompt } from './prompts/ai-review-verify.prompt';
-import { detectStructuralIssues } from '../common/ai-review-utils';
 import {
     AiReviewResultDto,
     BatchReviewResultDto,
@@ -91,19 +90,6 @@ export class AiReviewService {
 
         if (!question) {
             throw new Error(`Question ${questionId} not found`);
-        }
-
-        // 1b. Structural auto-rejection (no LLM call needed).
-        const structuralIssues = detectStructuralIssues({
-            stem: question.stem,
-            leadInQuestion: question.leadInQuestion,
-            choices: question.choices.map((c) => ({ id: c.id, letter: c.letter, order: c.order, text: c.text, isCorrect: c.isCorrect })),
-            wrongOptions: question.wrongOptions.map((w) => ({ id: w.id, letter: w.letter, text: w.text, explanation: w.explanation })),
-            explanation: question.explanation,
-        });
-
-        if (structuralIssues.length > 0) {
-            return this.saveAutoRejectedReview(questionId, structuralIssues, question, triggerFor(question, 0), stringent);
         }
 
         // 2. Query ChromaDB for relevant context
@@ -262,70 +248,6 @@ export class AiReviewService {
             tokenUsage: savedReview.tokenUsage || undefined,
             reviewDurationMs: savedReview.reviewDurationMs || undefined,
             replacementQuestionId,
-            createdAt: savedReview.createdAt,
-        };
-    }
-
-    // ============================================
-    // AUTO-REJECTED REVIEW (structural defects — no model call)
-    // ============================================
-    private async saveAutoRejectedReview(
-        questionId: string,
-        issues: { rule: string; description: string }[],
-        question: any,
-        trigger: AiReviewTrigger,
-        stringent: boolean,
-    ): Promise<AiReviewResultDto> {
-        const previousReviewCount = await this.prisma.aiReview.count({ where: { questionId } });
-        const descriptions = issues.map((i) => i.description);
-
-        const savedReview = await this.prisma.aiReview.create({
-            data: {
-                questionId,
-                verdict: 'FAIL',
-                medicalAccuracyScore: 0,
-                hallucinationRiskScore: 0,
-                usmleStyleScore: 0,
-                explanationQualityScore: 0,
-                clinicalRelevanceScore: 0,
-                grammaticalQualityScore: 0,
-                generalFeedback: `Automatically rejected due to structural defect${issues.length > 1 ? 's' : ''}: ${descriptions.join('; ')}`,
-                reviewedByAi: 'structural-check',
-                reviewDurationMs: 0,
-                attemptNumber: previousReviewCount + 1,
-                trigger,
-                promptVersion: stringent ? 'stringent-v1' : 'structural-check',
-                criticalIssues: issues,
-                humanRejectionContext: question.rejected ? question.reviewNotes ?? undefined : undefined,
-                humanAiAgreement: question.rejected ? true : undefined,
-            },
-        });
-
-        await this.prisma.question.update({
-            where: { id: questionId },
-            data: { reviewed: true },
-        });
-        this.logger.log(`Question ${questionId} auto-rejected (${issues.length} structural defect${issues.length > 1 ? 's' : ''}).`);
-
-        return {
-            id: savedReview.id,
-            questionId: savedReview.questionId,
-            verdict: 'FAIL',
-            scores: {
-                medicalAccuracy: 0,
-                hallucinationRisk: 0,
-                usmleStyle: 0,
-                explanationQuality: 0,
-                clinicalRelevance: 0,
-                grammaticalQuality: 0,
-            },
-            feedback: { general: savedReview.generalFeedback || undefined },
-            reviewedByAi: 'structural-check',
-            reviewDurationMs: 0,
-            attemptNumber: savedReview.attemptNumber,
-            trigger: trigger,
-            promptVersion: savedReview.promptVersion,
-            criticalIssues: issues,
             createdAt: savedReview.createdAt,
         };
     }
@@ -693,10 +615,4 @@ export class AiReviewService {
             reason: parsed.reason || '',
         };
     }
-}
-
-/** Determine the AiReviewTrigger for a question given its current review count. */
-function triggerFor(question: { rejected: boolean }, previousReviewCount: number): AiReviewTrigger {
-    if (question.rejected) return AiReviewTrigger.AFTER_HUMAN_REJECTION;
-    return previousReviewCount > 0 ? AiReviewTrigger.RE_REVIEW : AiReviewTrigger.MANUAL;
 }

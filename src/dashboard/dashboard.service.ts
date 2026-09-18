@@ -44,7 +44,11 @@ export class DashboardService {
   private async calculateScoreForecast(userId: string): Promise<ScoreForecastDto> {
     this.logger.debug(`Calculating score forecast for user: ${userId}`);
 
-    // Get user stats
+    // Get user stats and target exam date
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { targetTestDate: true },
+    });
     const userStats = await this.prisma.userStats.findUnique({
       where: { userId },
     });
@@ -59,11 +63,17 @@ export class DashboardService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // If no data, return default values
+    // Days until the target exam (used to tighten the confidence interval)
+    const daysToExam = user?.targetTestDate
+      ? Math.max(0, Math.ceil((user.targetTestDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000)))
+      : null;
+
+    // If no data, return a neutral baseline (50% pass probability)
     if (!userStats || recentQuestions.length === 0) {
       return {
-        predictedScore: 180, // Baseline score
-        confidenceInterval: { lower: 160, upper: 200 },
+        passProbability: 50,
+        confidenceInterval: { lower: 35, upper: 65 },
+        daysToExam,
         trend: 'STABLE',
         lastUpdated: new Date(),
       };
@@ -73,23 +83,35 @@ export class DashboardService {
     const correctCount = recentQuestions.filter(q => q.isCorrect).length;
     const accuracy = recentQuestions.length > 0 ? correctCount / recentQuestions.length : 0;
 
-    // Predict score based on accuracy (USMLE Step 1: 200-300 range)
-    // This is a simplified model - in production, use ML-based prediction
-    const predictedScore = Math.round(200 + (accuracy * 100) + (userStats.accuracy * 50));
-    
+    // Blend recent accuracy with the user's lifetime accuracy for stability.
+    const blendedAccuracy = (accuracy * 0.7) + (userStats.accuracy * 0.3);
+
+    // USMLE Step 1 is pass/fail with a passing threshold around 65% average accuracy.
+    // Map accuracy to a pass probability using a logistic curve centered on 0.65.
+    // At 65% accuracy the pass probability is ~50%; each ~5% of accuracy above/below
+    // the threshold shifts the probability substantially.
+    const passingThreshold = 0.65;
+    const steepness = 14; // controls how quickly confidence rises as accuracy moves away from the threshold
+    const passProbability = Math.round(
+      (1 / (1 + Math.exp(-steepness * (blendedAccuracy - passingThreshold)))) * 100,
+    );
+
     // Calculate trend (comparing first half vs second half of recent questions)
     const trend = this.calculateTrend(recentQuestions);
 
-    // Calculate confidence interval based on sample size
+    // Confidence interval width shrinks with more data and when the exam is near.
     const sampleSizeFactor = Math.min(recentQuestions.length / 50, 1);
-    const margin = Math.round(30 * (1 - sampleSizeFactor));
+    const examProximityFactor = daysToExam !== null ? Math.min(daysToExam / 7, 1) : 1;
+    // Base margin ~20pp, reduced by data volume and exam proximity (down to ~5pp within a week).
+    const margin = Math.round(20 * (1 - sampleSizeFactor * 0.5) * (0.25 + 0.75 * examProximityFactor));
 
     return {
-      predictedScore: Math.max(180, Math.min(300, predictedScore)),
-      confidenceInterval: { 
-        lower: Math.max(160, predictedScore - margin), 
-        upper: Math.min(320, predictedScore + margin) 
+      passProbability: Math.max(0, Math.min(100, passProbability)),
+      confidenceInterval: {
+        lower: Math.max(0, passProbability - margin),
+        upper: Math.min(100, passProbability + margin),
       },
+      daysToExam,
       trend,
       lastUpdated: new Date(),
     };
@@ -510,10 +532,10 @@ export class DashboardService {
     burnoutAnalysis: BurnoutAnalysisDto,
     knowledgeHeatmap: KnowledgeHeatmapDto[],
   ): number {
-    // Weighted scoring: 40% score, 30% burnout risk, 30% knowledge coverage
+    // Weighted scoring: 40% pass probability, 30% burnout risk, 30% knowledge coverage
     
-    // Score component (normalized to 0-100)
-    const scoreComponent = Math.min(100, (scoreForecast.predictedScore - 180) / 1.2);
+    // Score component: pass probability is already on a 0-100 scale
+    const scoreComponent = scoreForecast.passProbability;
 
     // Burnout component: invert the 0-100 burnout score so higher burnout lowers readiness
     const burnoutComponent = 100 - burnoutAnalysis.burnoutScore;

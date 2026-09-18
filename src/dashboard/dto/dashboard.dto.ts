@@ -18,14 +18,17 @@ export enum OrganSystem {
 }
 
 export class ScoreForecastDto {
-  @ApiProperty()
-  predictedScore!: number;
+  @ApiProperty({ description: 'Probability of passing USMLE Step 1 (0-100%). Step 1 is pass/fail with a passing threshold around 65% average accuracy.' })
+  passProbability!: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: '95% confidence interval for the pass probability (0-100%). Narrows as sample size grows and when the exam is within 1 week.' })
   confidenceInterval!: {
     lower: number;
     upper: number;
   };
+
+  @ApiProperty({ description: 'Days until the target exam date, or null if not set' })
+  daysToExam!: number | null;
 
   @ApiProperty()
   trend!: 'IMPROVING' | 'DECLINING' | 'STABLE';
