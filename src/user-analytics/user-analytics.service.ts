@@ -106,7 +106,7 @@ export class UserAnalyticsService {
             where: { id: { in: questionIds } },
             select: {
                 id: true,
-                system: true,
+                organSystem: { select: { name: true } },
             },
         });
         const qMap = new Map(questions.map((q) => [q.id, q]));
@@ -115,9 +115,9 @@ export class UserAnalyticsService {
         for (const a of allAttempts) {
             const q = qMap.get(a.questionId);
             if (!q) continue;
-            // Use the question's organ system field (e.g. "Cardiovascular",
-            // "Neurology"). Fall back to the subject name when system is unset.
-            const name = q.system || 'Unknown';
+            // Use the question's organ system relation.
+            // Fall back to "Unknown" when unset.
+            const name = q.organSystem?.name || 'Unknown';
             const entry = systemMap.get(name) || { attempted: 0, correct: 0 };
             entry.attempted += 1;
             if (a.isCorrect) entry.correct += 1;
@@ -366,7 +366,7 @@ export class UserAnalyticsService {
             where: { id: { in: questionIds } },
             select: {
                 id: true,
-                topic: { select: { id: true, name: true, subject: { select: { name: true } } } },
+                topic: { select: { id: true, name: true, discipline: { select: { name: true } } } },
             },
         });
         const qMap = new Map(questions.map((q) => [q.id, q]));
@@ -379,7 +379,7 @@ export class UserAnalyticsService {
             const entry = topicMap.get(key) || {
                 topicId: q.topic.id,
                 topic: q.topic.name,
-                subject: q.topic.subject.name,
+                subject: q.topic.discipline.name,
                 attempted: 0,
                 correct: 0,
             };
@@ -404,7 +404,7 @@ export class UserAnalyticsService {
             where: { id: { in: questionIds } },
             select: {
                 id: true,
-                topic: { select: { subject: { select: { name: true } } } },
+                topic: { select: { discipline: { select: { name: true } } } },
             },
         });
         const qMap = new Map(questions.map((q) => [q.id, q]));
@@ -413,7 +413,7 @@ export class UserAnalyticsService {
         for (const a of attempts) {
             const q = qMap.get(a.questionId);
             if (!q) continue;
-            const name = q.topic.subject.name;
+            const name = q.topic.discipline.name;
             const entry = subjectMap.get(name) || { subject: name, attempted: 0, correct: 0 };
             entry.attempted += 1;
             if (a.isCorrect) entry.correct += 1;

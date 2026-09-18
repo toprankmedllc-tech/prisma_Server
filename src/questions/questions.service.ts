@@ -90,8 +90,8 @@ export class QuestionsService {
 
                         // Medical Classification
                         topicId: topic.id,
-                        system: questionData.system || null,
-                        discipline: questionData.discipline || null,
+                        organSystemId: questionData.system ? await this.findOrCreateOrganSystem(questionData.system) : null,
+                        disciplineId: questionData.discipline ? await this.findOrCreateDiscipline(questionData.discipline) : null,
                         cognitiveLevel: this.mapCognitiveLevel(questionData.cognitiveLevel),
                         difficulty: this.mapDifficulty(questionData.difficulty),
                         trapType: questionData.trapType || null,
@@ -231,16 +231,20 @@ export class QuestionsService {
         }
 
         if (system) {
-            where.system = {
-                contains: system,
-                mode: 'insensitive',
+            where.organSystem = {
+                name: {
+                    contains: system,
+                    mode: 'insensitive',
+                },
             };
         }
 
         if (discipline) {
             where.discipline = {
-                contains: discipline,
-                mode: 'insensitive',
+                name: {
+                    contains: discipline,
+                    mode: 'insensitive',
+                },
             };
         }
 
@@ -300,7 +304,7 @@ export class QuestionsService {
             include: {
                 topic: {
                     include: {
-                        subject: true,
+                        discipline: true,
                     },
                 },
                 choices: {
@@ -334,7 +338,7 @@ export class QuestionsService {
     // NEW: Get all subjects with their topics (and optional question counts)
     // ============================================
     async getSubjectsWithTopics(includeTopics: boolean = true): Promise<any[]> {
-        const subjects = await this.prisma.subject.findMany({
+        const subjects = await this.prisma.discipline.findMany({
             include: includeTopics ? {
                 topics: {
                     orderBy: { name: 'asc' },
@@ -370,12 +374,77 @@ export class QuestionsService {
     }
 
     // ============================================
+    // NEW: Get all disciplines with their topics
+    // ============================================
+    async getDisciplinesWithTopics(): Promise<any[]> {
+        const disciplines = await this.prisma.discipline.findMany({
+            include: {
+                questions: {
+                    select: {
+                        topic: {
+                            select: {
+                                id: true,
+                                name: true,
+                            },
+                        },
+                    },
+                },
+            },
+            orderBy: { name: 'asc' },
+        });
+
+        // Get question counts per topic
+        const topicCounts = await this.prisma.question.groupBy({
+            by: ['topicId'],
+            _count: true,
+        });
+
+        const countMap = new Map<string, number>();
+        topicCounts.forEach((group) => {
+            countMap.set(group.topicId, group._count);
+        });
+
+        // Build a map of discipline name -> topics (deduplicated)
+        const disciplineTopicMap = new Map<string, Set<string>>();
+        const disciplineTopicIdMap = new Map<string, Map<string, string>>();
+
+        for (const discipline of disciplines) {
+            const topicSet = new Set<string>();
+            const topicIdMap = new Map<string, string>();
+            for (const q of discipline.questions) {
+                if (q.topic) {
+                    topicSet.add(q.topic.name);
+                    topicIdMap.set(q.topic.name, q.topic.id);
+                }
+            }
+            disciplineTopicMap.set(discipline.name, topicSet);
+            disciplineTopicIdMap.set(discipline.name, topicIdMap);
+        }
+
+        return disciplines.map((discipline: any) => {
+            const topicNames = disciplineTopicMap.get(discipline.name) || new Set();
+            const topicIdMap = disciplineTopicIdMap.get(discipline.name) || new Map();
+            const topics = Array.from(topicNames).sort().map((name) => ({
+                id: topicIdMap.get(name) || '',
+                name,
+                questionCount: countMap.get(topicIdMap.get(name) || '') || 0,
+            }));
+            return {
+                id: discipline.id,
+                name: discipline.name,
+                description: discipline.description,
+                topics,
+            };
+        });
+    }
+
+    // ============================================
     // NEW: Get all topics (optionally filtered by subject)
     // ============================================
     async getTopics(subjectId?: string): Promise<{ topics: { topicId: string; topic: string; questionCount: number }[]; totalTopics: number; totalQuestionsCount: number }> {
         const where: any = {};
         if (subjectId) {
-            where.subjectId = subjectId;
+            where.disciplineId = subjectId;
         }
 
         // Get all topics with their question counts in a single grouped query
@@ -424,18 +493,20 @@ export class QuestionsService {
     // and only includes topics that have questions in those system(s).
     // ============================================
     async getSubjectsWithTopicsBySystem(systems: string[]): Promise<any[]> {
-        // Find all topics that have questions matching the given systems
+        // Find all topics that have questions matching the given organ systems
         const topicsWithQuestions = await this.prisma.topic.findMany({
             where: {
                 questions: {
                     some: {
-                        system: { in: systems },
+                        organSystem: {
+                            name: { in: systems },
+                        },
                     },
                 },
             },
             select: {
                 id: true,
-                subjectId: true,
+                disciplineId: true,
             },
         });
 
@@ -443,10 +514,10 @@ export class QuestionsService {
             return [];
         }
 
-        // Collect unique subject IDs that have qualifying topics
-        const subjectIds = [...new Set(topicsWithQuestions.map(t => t.subjectId))];
+        // Collect unique discipline IDs that have qualifying topics
+        const subjectIds = [...new Set(topicsWithQuestions.map(t => t.disciplineId))];
 
-        // Collect topic IDs that have questions in the given systems
+        // Collect topic IDs that have questions in the given organ systems
         const qualifyingTopicIds = topicsWithQuestions.map(t => t.id);
 
         // Get question counts per topic (only for qualifying topics)
@@ -454,7 +525,9 @@ export class QuestionsService {
             by: ['topicId'],
             where: {
                 topicId: { in: qualifyingTopicIds },
-                system: { in: systems },
+                organSystem: {
+                    name: { in: systems },
+                },
             },
             _count: true,
         });
@@ -464,8 +537,8 @@ export class QuestionsService {
             countMap.set(group.topicId, group._count);
         });
 
-        // Fetch subjects with their qualifying topics
-        const subjects = await this.prisma.subject.findMany({
+        // Fetch disciplines with their qualifying topics
+        const subjects = await this.prisma.discipline.findMany({
             where: {
                 id: { in: subjectIds },
             },
@@ -500,13 +573,15 @@ export class QuestionsService {
         totalTopics: number;
         totalQuestionsCount: number;
     }> {
-        // Find topics under this subject that have questions in the given systems
+        // Find topics under this discipline that have questions in the given organ systems
         const topics = await this.prisma.topic.findMany({
             where: {
-                subjectId: subjectId,
+                disciplineId: subjectId,
                 questions: {
                     some: {
-                        system: { in: systems },
+                        organSystem: {
+                            name: { in: systems },
+                        },
                     },
                 },
             },
@@ -523,7 +598,9 @@ export class QuestionsService {
             by: ['topicId'],
             where: {
                 topicId: { in: topicIds },
-                system: { in: systems },
+                organSystem: {
+                    name: { in: systems },
+                },
             },
             _count: true,
         });
@@ -633,15 +710,24 @@ export class QuestionsService {
 
         // Get systems with counts
         const systemGroups = await this.prisma.question.groupBy({
-            by: ['system'],
-            where: { system: { not: null } },
+            by: ['organSystemId'],
+            where: { organSystemId: { not: null } },
             _count: true,
         });
 
         const bySystem: Record<string, number> = {};
+        const organSystemMap = new Map<string, string>();
+        const organSystems = await this.prisma.organSystem.findMany({
+            select: { id: true, name: true },
+        });
+        organSystems.forEach(os => organSystemMap.set(os.id, os.name));
+
         systemGroups.forEach(group => {
-            if (group.system) {
-                bySystem[group.system] = group._count;
+            if (group.organSystemId) {
+                const name = organSystemMap.get(group.organSystemId);
+                if (name) {
+                    bySystem[name] = group._count;
+                }
             }
         });
 
@@ -652,7 +738,7 @@ export class QuestionsService {
         });
 
         const allTopics = await this.prisma.topic.findMany({
-            include: { subject: true },
+            include: { discipline: true },
         });
 
         const topicCountMap = new Map<string, number>();
@@ -663,7 +749,7 @@ export class QuestionsService {
 
         for (const topic of allTopics) {
             const count = topicCountMap.get(topic.id) || 0;
-            const subjectName = topic.subject.name;
+            const subjectName = topic.discipline.name;
             bySubject[subjectName] = (bySubject[subjectName] || 0) + count;
             byTopic[topic.name] = count;
         }
@@ -698,30 +784,30 @@ export class QuestionsService {
     // ============================================
 
     private async findOrCreateTopic(topicName: string, discipline?: string): Promise<Topic> {
-        // Determine subject name from discipline, default to 'Unknown'
+        // Determine discipline name from discipline, default to 'Unknown'
         const subjectName = discipline && discipline.trim() ? discipline.trim() : 'Unknown';
 
-        // Find or create the subject
-        let subject = await this.prisma.subject.findFirst({
+        // Find or create the discipline
+        let subject = await this.prisma.discipline.findFirst({
             where: { name: { equals: subjectName, mode: 'insensitive' } },
         });
 
         if (!subject) {
-            subject = await this.prisma.subject.create({
+            subject = await this.prisma.discipline.create({
                 data: {
                     name: subjectName,
                     description: `${subjectName} topics for USMLE preparation`,
                 },
             });
-            this.logger.log(`Created subject: ${subjectName}`);
+            this.logger.log(`Created discipline: ${subjectName}`);
         }
 
         if (!topicName || topicName === 'Unknown Topic') {
-            // Find or create default topic under this subject
+            // Find or create default topic under this discipline
             let topic = await this.prisma.topic.findFirst({
                 where: {
                     name: 'General Medicine',
-                    subjectId: subject.id,
+                    disciplineId: subject.id,
                 },
             });
 
@@ -729,35 +815,73 @@ export class QuestionsService {
                 topic = await this.prisma.topic.create({
                     data: {
                         name: 'General Medicine',
-                        subjectId: subject.id,
+                        disciplineId: subject.id,
                     },
                 });
-                this.logger.log(`Created default topic 'General Medicine' under subject '${subjectName}'`);
+                this.logger.log(`Created default topic 'General Medicine' under discipline '${subjectName}'`);
             }
 
             return topic;
         }
 
-        // Find existing topic within this subject
+        // Find existing topic within this discipline
         let topic = await this.prisma.topic.findFirst({
             where: {
                 name: { equals: topicName, mode: 'insensitive' },
-                subjectId: subject.id,
+                disciplineId: subject.id,
             },
         });
 
         if (!topic) {
-            // Create new topic under this subject
+            // Create new topic under this discipline
             topic = await this.prisma.topic.create({
                 data: {
                     name: topicName,
-                    subjectId: subject.id,
+                    disciplineId: subject.id,
                 },
             });
-            this.logger.log(`Created topic '${topicName}' under subject '${subjectName}'`);
+            this.logger.log(`Created topic '${topicName}' under discipline '${subjectName}'`);
         }
 
         return topic;
+    }
+
+    private async findOrCreateOrganSystem(systemName: string): Promise<string> {
+        const normalizedName = systemName.trim();
+        let organSystem = await this.prisma.organSystem.findFirst({
+            where: { name: { equals: normalizedName, mode: 'insensitive' } },
+        });
+
+        if (!organSystem) {
+            organSystem = await this.prisma.organSystem.create({
+                data: {
+                    name: normalizedName,
+                    description: `${normalizedName} questions for USMLE preparation`,
+                },
+            });
+            this.logger.log(`Created organ system: ${normalizedName}`);
+        }
+
+        return organSystem.id;
+    }
+
+    private async findOrCreateDiscipline(disciplineName: string): Promise<string> {
+        const normalizedName = disciplineName.trim();
+        let discipline = await this.prisma.discipline.findFirst({
+            where: { name: { equals: normalizedName, mode: 'insensitive' } },
+        });
+
+        if (!discipline) {
+            discipline = await this.prisma.discipline.create({
+                data: {
+                    name: normalizedName,
+                    description: `${normalizedName} questions for USMLE preparation`,
+                },
+            });
+            this.logger.log(`Created discipline: ${normalizedName}`);
+        }
+
+        return discipline.id;
     }
 
     private async processTags(tagNames: string[]) {
@@ -962,7 +1086,7 @@ export class QuestionsService {
         const scalarFields = [
             'stem', 'leadInQuestion', 'explanation', 'topicId', 'difficulty', 'source',
             'sourceType',
-            'system', 'discipline', 'patientProfile', 'chiefComplaint', 'keySymptoms',
+            'organSystemId', 'disciplineId', 'patientProfile', 'chiefComplaint', 'keySymptoms',
             'physicalExam', 'mainClue', 'supportingClue', 'correctAnswerLetter',
             'correctAnswerText', 'stepByStepReasoning', 'educationalObjective', 'buzzwords',
             'buzzwordCombinationCorrect', 'relatedConcepts', 'suggestedImages',
@@ -1011,7 +1135,7 @@ export class QuestionsService {
             return tx.question.update({
                 where: { id },
                 data: { ...questionData, isPublished: false, reviewed: false, rejected: false, reviewedBy: null, reviewNotes: Prisma.JsonNull, qualityReview: { delete: {} } },
-                include: { topic: { include: { subject: true } }, choices: { orderBy: { order: 'asc' } }, wrongOptions: { orderBy: { order: 'asc' } }, vitals: true, qualityReview: true, tags: { include: { tag: true } }, aiReviews: { orderBy: [{ attemptNumber: 'desc' }, { createdAt: 'desc' }] } },
+                include: { topic: { include: { discipline: true } }, choices: { orderBy: { order: 'asc' } }, wrongOptions: { orderBy: { order: 'asc' } }, vitals: true, qualityReview: true, tags: { include: { tag: true } }, aiReviews: { orderBy: [{ attemptNumber: 'desc' }, { createdAt: 'desc' }] } },
             });
         });
 
@@ -1074,7 +1198,7 @@ export class QuestionsService {
             data: updateData,
             include: {
                 topic: {
-                    include: { subject: true },
+                    include: { discipline: true },
                 },
                 choices: {
                     orderBy: { order: 'asc' },
@@ -1227,7 +1351,7 @@ export class QuestionsService {
                    s.id as subject_id, s.name as subject_name
             FROM "Question" q
             JOIN "Topic" t ON t.id = q."topicId"
-            JOIN "Subject" s ON s.id = t."subjectId"
+            JOIN "Discipline" s ON s.id = t."disciplineId"
             ${whereClause}
             ORDER BY RANDOM()
             LIMIT ${ASSIGN_COUNT}
@@ -1294,7 +1418,7 @@ export class QuestionsService {
             where: { id: { in: pendingIds } },
             include: {
                 topic: {
-                    include: { subject: true },
+                    include: { discipline: true },
                 },
             },
         });
@@ -1316,8 +1440,8 @@ export class QuestionsService {
                 id: q.topic.id,
                 name: q.topic.name,
                 subject: {
-                    id: q.topic.subject.id,
-                    name: q.topic.subject.name,
+                    id: q.topic.discipline.id,
+                    name: q.topic.discipline.name,
                 },
             },
         }));
@@ -1357,8 +1481,10 @@ export class QuestionsService {
             where: { id },
             include: {
                 topic: {
-                    include: { subject: true },
+                    include: { discipline: true },
                 },
+                organSystem: true,
+                discipline: true,
                 choices: {
                     orderBy: { order: 'asc' },
                 },
@@ -1398,9 +1524,8 @@ export class QuestionsService {
             sourceFile: question.sourceFile,
             qid: question.qid,
             topicId: question.topicId,
-            system: question.system,
-            discipline: question.discipline,
-            subsystem: question.subsystem,
+            organSystem: question.organSystem ? { id: question.organSystem.id, name: question.organSystem.name } : null,
+            discipline: question.discipline ? { id: question.discipline.id, name: question.discipline.name } : null,
             cognitiveLevel: question.cognitiveLevel,
             difficulty: question.difficulty,
             trapType: question.trapType,
@@ -1431,8 +1556,8 @@ export class QuestionsService {
                 id: question.topic.id,
                 name: question.topic.name,
                 subject: {
-                    id: question.topic.subject.id,
-                    name: question.topic.subject.name,
+                    id: question.topic.discipline.id,
+                    name: question.topic.discipline.name,
                 },
             },
             choices: question.choices.map((c: any) => ({
@@ -1535,7 +1660,7 @@ export class QuestionsService {
             where: { id: { in: paginatedIds } },
             include: {
                 topic: {
-                    include: { subject: true },
+                    include: { discipline: true },
                 },
             },
         });
@@ -1560,8 +1685,8 @@ export class QuestionsService {
                     id: q.topic.id,
                     name: q.topic.name,
                     subject: {
-                        id: q.topic.subject.id,
-                        name: q.topic.subject.name,
+                        id: q.topic.discipline.id,
+                        name: q.topic.discipline.name,
                     },
                 },
             })),
@@ -1599,7 +1724,7 @@ export class QuestionsService {
             where: { id: { in: paginatedIds } },
             include: {
                 topic: {
-                    include: { subject: true },
+                    include: { discipline: true },
                 },
             },
         });
@@ -1624,8 +1749,8 @@ export class QuestionsService {
                     id: q.topic.id,
                     name: q.topic.name,
                     subject: {
-                        id: q.topic.subject.id,
-                        name: q.topic.subject.name,
+                        id: q.topic.discipline.id,
+                        name: q.topic.discipline.name,
                     },
                 },
             })),
@@ -1738,8 +1863,10 @@ export class QuestionsService {
         const result = await this.prisma.question.updateMany({
             where: {
                 discipline: {
-                    equals: discipline,
-                    mode: 'insensitive',
+                    name: {
+                        equals: discipline,
+                        mode: 'insensitive',
+                    },
                 },
                 isPublished: true,
             },
@@ -1757,17 +1884,18 @@ export class QuestionsService {
     // NEW: Get all distinct organ systems from questions
     // ============================================
     async getSystems(): Promise<{ systems: string[] }> {
-        const systemGroups = await this.prisma.question.groupBy({
-            by: ['system'],
-            where: { system: { not: null } },
-            _count: true,
+        const organSystems = await this.prisma.organSystem.findMany({
+            where: {
+                questions: {
+                    some: {},
+                },
+            },
+            select: { name: true },
+            orderBy: { name: 'asc' },
         });
 
-        const systems = systemGroups
-            .map(g => g.system)
-            .filter((s): s is string => s !== null)
-            .sort();
-
-        return { systems };
+        return {
+            systems: organSystems.map(os => os.name),
+        };
     }
 }

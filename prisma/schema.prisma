@@ -206,9 +206,8 @@ model Question {
   sourceFile                 String?
   qid                        String?
   topicId                    String
-  system                     String?
-  discipline                 String?
-  subsystem                  String?
+  organSystemId              String?
+  disciplineId               String?
   cognitiveLevel             CognitiveLevel?
   difficulty                 Difficulty
   trapType                   String?
@@ -246,6 +245,8 @@ model Question {
   originalQuestion           Question?                 @relation("QuestionReplacements", fields: [originalQuestionId], references: [id])
   aiReplacements             Question[]                @relation("QuestionReplacements")
   topic                      Topic                     @relation(fields: [topicId], references: [id])
+  organSystem                OrganSystem?              @relation(fields: [organSystemId], references: [id])
+  discipline                 Discipline?               @relation("QuestionDiscipline", fields: [disciplineId], references: [id])
   attempts                   QuestionAttempt[]
   questionFlags              QuestionFlag[]
   questionHighlights         QuestionHighlight[]
@@ -369,13 +370,13 @@ model StudySession {
   description  String?
   questionType QuestionSourceType?
   difficulty   Difficulty?
-  subjectId    String?
+  disciplineId String?
   status       StudySessionStatus     @default(IN_PROGRESS)
   startedAt    DateTime               @default(now())
   completedAt  DateTime?
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
-  subject      Subject?               @relation(fields: [subjectId], references: [id])
+  discipline   Discipline?            @relation(fields: [disciplineId], references: [id])
   user         User                   @relation(fields: [userId], references: [id])
   questions    StudySessionQuestion[]
 
@@ -504,25 +505,34 @@ model Flashcard {
   user       User      @relation(fields: [userId], references: [id])
 }
 
-model Subject {
+model OrganSystem {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  createdAt   DateTime   @default(now())
+  questions   Question[]
+}
+
+model Discipline {
   id            String         @id @default(cuid())
   name          String         @unique
   description   String?
   createdAt     DateTime       @default(now())
   studySessions StudySession[]
   topics        Topic[]
+  questions     Question[]     @relation("QuestionDiscipline")
 }
 
 model Topic {
-  id        String     @id @default(cuid())
-  name      String
-  subjectId String
-  parentId  String?
-  createdAt DateTime   @default(now())
-  questions Question[]
-  parent    Topic?     @relation("TopicHierarchy", fields: [parentId], references: [id])
-  children  Topic[]    @relation("TopicHierarchy")
-  subject   Subject    @relation(fields: [subjectId], references: [id])
+  id           String     @id @default(cuid())
+  name         String
+  disciplineId String
+  parentId     String?
+  createdAt    DateTime   @default(now())
+  questions    Question[]
+  parent       Topic?     @relation("TopicHierarchy", fields: [parentId], references: [id])
+  children     Topic[]    @relation("TopicHierarchy")
+  discipline   Discipline @relation(fields: [disciplineId], references: [id])
 }
 
 model Conversation {

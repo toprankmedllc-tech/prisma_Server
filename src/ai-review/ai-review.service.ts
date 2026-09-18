@@ -83,7 +83,9 @@ export class AiReviewService {
                 choices: { orderBy: { order: 'asc' } },
                 wrongOptions: { orderBy: { order: 'asc' } },
                 vitals: true,
-                topic: { include: { subject: true } },
+                topic: { include: { discipline: true } },
+                organSystem: true,
+                discipline: true,
                 tags: { include: { tag: true } },
             },
         });
@@ -358,7 +360,7 @@ export class AiReviewService {
             take: filters?.limit || 50,
             orderBy: { updatedAt: 'desc' },
             include: {
-                topic: { include: { subject: true } },
+                topic: { include: { discipline: true } },
                 choices: { orderBy: { order: 'asc' } },
                 wrongOptions: { orderBy: { order: 'asc' } },
                 vitals: true,

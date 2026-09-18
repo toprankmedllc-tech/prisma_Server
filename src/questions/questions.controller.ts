@@ -30,7 +30,7 @@ interface RequestWithUser extends Request {
     };
 }
 
-import { SubjectResponseDto } from './dto/response.dto';
+import { DisciplineResponseDto } from './dto/response.dto';
 
 @ApiTags('Questions')
 @ApiCookieAuth('access_token')
@@ -210,14 +210,23 @@ export class QuestionsController {
     }
 
     // ============================================
+    // DISCIPLINES: Get all disciplines with their topics
+    // ============================================
+    @Get('disciplines')
+    @ApiOperation({ summary: 'Get all disciplines', description: 'Returns all disciplines with their topics and question counts.' })
+    async getDisciplines(): Promise<any[]> {
+        return this.questionsService.getDisciplinesWithTopics();
+    }
+
+    // ============================================
     // SUBJECTS & TOPICS: Get all subjects with their topics
     // ============================================
     @Get('subjects')
-    @ApiOperation({ summary: 'Get all subjects', description: 'Returns all subjects. When includeTopics=true (default), includes topics with question counts.' })
+    @ApiOperation({ summary: 'Get all disciplines', description: 'Returns all disciplines. When includeTopics=true (default), includes topics with question counts.' })
     @ApiQuery({ name: 'includeTopics', required: false, type: Boolean, description: 'Include topics with question Count in each topic ' })
     async getSubjects(
         @Query('includeTopics') includeTopics?: string,
-    ): Promise<SubjectResponseDto[]> {
+    ): Promise<DisciplineResponseDto[]> {
         return this.questionsService.getSubjectsWithTopics(includeTopics !== 'false');
     }
 

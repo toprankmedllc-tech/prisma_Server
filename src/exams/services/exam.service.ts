@@ -80,7 +80,7 @@ export class ExamService {
             question: {
               include: {
                 choices: { orderBy: { order: 'asc' } },
-                topic: { include: { subject: true } },
+                topic: { include: { discipline: true } },
               },
             },
           },
@@ -282,7 +282,7 @@ export class ExamService {
     const block = await this.prisma.examQuestion.findMany({
       where: { examId: attempt.examId, blockIndex: attempt.currentBlock },
       orderBy: { questionId: 'asc' },
-      include: { question: { include: { choices: { orderBy: { order: 'asc' } }, topic: { include: { subject: true } }, vitals: true } } },
+      include: { question: { include: { choices: { orderBy: { order: 'asc' } }, topic: { include: { discipline: true } }, vitals: true } } },
     });
     const answers = Array.isArray(attempt.questionAttempts) ? attempt.questionAttempts as any[] : [];
     const answeredQuestions = answers.filter((answer) => answer.type !== 'TIP' && answer.blockIndex === attempt.currentBlock);
@@ -401,7 +401,7 @@ export class ExamService {
           include: {
             choices: { orderBy: { order: 'asc' } },
             wrongOptions: { orderBy: { order: 'asc' } },
-            topic: { include: { subject: true } },
+            topic: { include: { discipline: true } },
           },
         },
       },
@@ -446,7 +446,7 @@ export class ExamService {
 
     const question = await this.prisma.question.findUnique({
       where: { id: dto.questionId },
-      select: { id: true, stem: true, leadInQuestion: true, topic: { select: { name: true, subject: { select: { name: true } } } } },
+      select: { id: true, stem: true, leadInQuestion: true, topic: { select: { name: true, discipline: { select: { name: true } } } } },
     });
     if (!question) throw new NotFoundException('Question not found');
 
@@ -458,7 +458,7 @@ export class ExamService {
 
     const content = await this.llmService.chat([
       { role: 'system', content: 'You are a USMLE study tutor providing one useful hint. Give a short, indirect clue that guides reasoning without stating the diagnosis, correct answer, or final management. Do not reveal the answer. Focus on the key finding, mechanism, or next reasoning step.' },
-      { role: 'user', content: `Question subject: ${question.topic.subject.name}\nTopic: ${question.topic.name}\nQuestion stem:\n${question.stem}\n${question.leadInQuestion || ''}` },
+      { role: 'user', content: `Question subject: ${question.topic.discipline.name}\nTopic: ${question.topic.name}\nQuestion stem:\n${question.stem}\n${question.leadInQuestion || ''}` },
     ], { temperature: 0.4, maxTokens: 220 });
 
     const tipRecord = { type: 'TIP', questionId: dto.questionId, createdAt: new Date().toISOString() };
@@ -482,7 +482,7 @@ export class ExamService {
     if (!examQuestion) throw new NotFoundException('Question does not belong to this mock attempt');
     const question = await this.prisma.question.findFirst({
       where: { id: dto.questionId, isPublished: true },
-      include: { choices: { orderBy: { order: 'asc' } }, wrongOptions: { orderBy: { order: 'asc' } }, topic: { include: { subject: true } } },
+      include: { choices: { orderBy: { order: 'asc' } }, wrongOptions: { orderBy: { order: 'asc' } }, topic: { include: { discipline: true } } },
     });
     if (!question) throw new NotFoundException('Question not found');
     const history = (dto.messages || []).slice(-10).map((message) => ({ role: message.role, content: message.content }));
@@ -491,7 +491,7 @@ export class ExamService {
       question.leadInQuestion ? `Lead-in:\n${question.leadInQuestion}` : '',
       `Answer choices:\n${question.choices.map((choice) => `${choice.letter || choice.order}. ${choice.text}`).join('\\n')}`,
       dto.selectedText ? `Student-selected text:\n${dto.selectedText}` : '',
-      `Topic: ${question.topic.subject.name} — ${question.topic.name}`,
+      `Topic: ${question.topic.discipline.name} — ${question.topic.name}`,
       `Difficulty: ${question.difficulty}`,
       `Stored teaching explanation:\n${question.explanation}`,
       question.stepByStepReasoning ? `Stored reasoning:\n${question.stepByStepReasoning}` : '',
@@ -637,7 +637,9 @@ export class ExamService {
     }
 
     if (settings.organSystems?.length) {
-      where.system = { in: settings.organSystems };
+      where.organSystem = {
+        name: { in: settings.organSystems },
+      };
     }
 
     return where;

@@ -11,7 +11,7 @@ export class StudyService {
     const subjectIds = [...new Set(dto.subjectIds?.length ? dto.subjectIds : dto.subjectId ? [dto.subjectId] : [])];
     if (!subjectIds.length) throw new BadRequestException('Select at least one subject.');
 
-    const subjects = await this.prisma.subject.findMany({
+    const subjects = await this.prisma.discipline.findMany({
       where: { id: { in: subjectIds } },
       select: { id: true },
     });
@@ -22,7 +22,7 @@ export class StudyService {
       isPublished: dto.isPublished ?? true,
       difficulty: difficulties.length ? { in: difficulties } : undefined,
       topic: {
-        subjectId: { in: subjectIds },
+        disciplineId: { in: subjectIds },
         ...(dto.topics?.length ? { name: { in: dto.topics } } : {}),
       },
       ...(dto.questionType !== StudyQuestionType.BOTH ? { sourceType: dto.questionType as QuestionSourceType } : {}),
@@ -43,7 +43,7 @@ export class StudyService {
         description: dto.description?.trim() || null,
         questionType: dto.questionType === StudyQuestionType.BOTH ? null : dto.questionType as QuestionSourceType,
         difficulty: difficulties.length === 1 ? difficulties[0] : null,
-        subjectId: subjectIds.length === 1 ? subjectIds[0] : null,
+        disciplineId: subjectIds.length === 1 ? subjectIds[0] : null,
         questions: { create: selectedIds.map((questionId, index) => ({ questionId, order: index + 1 })) },
       },
     });
@@ -56,7 +56,7 @@ export class StudyService {
       where: { userId },
       orderBy: { updatedAt: 'desc' },
       include: {
-        subject: { select: { id: true, name: true } },
+        discipline: { select: { id: true, name: true } },
         questions: { select: { status: true, attemptCount: true } },
       },
     }).then((sessions) => sessions.map((session) => ({
@@ -65,7 +65,7 @@ export class StudyService {
       description: session.description,
       questionType: session.questionType,
       difficulty: session.difficulty,
-      subject: session.subject,
+      discipline: session.discipline,
       status: session.status,
       questionCount: session.questions.length,
       correctCount: session.questions.filter(({ status }) => status === 'CORRECT').length,
@@ -81,7 +81,7 @@ export class StudyService {
     const session = await this.prisma.studySession.findFirst({
       where: { id, userId },
       include: {
-        subject: { select: { id: true, name: true } },
+        discipline: { select: { id: true, name: true } },
         questions: {
           orderBy: { order: 'asc' },
           include: {
@@ -100,7 +100,7 @@ export class StudyService {
                 sourceType: true,
                 difficulty: true,
                 cognitiveLevel: true,
-                topic: { select: { id: true, name: true, subject: { select: { id: true, name: true } } } },
+                topic: { select: { id: true, name: true, discipline: { select: { id: true, name: true } } } },
                 vitals: true,
                 choices: { orderBy: { order: 'asc' }, select: { id: true, text: true, letter: true, order: true } },
               },
@@ -135,7 +135,7 @@ export class StudyService {
       description: session.description,
       questionType: session.questionType,
       difficulty: session.difficulty,
-      subject: session.subject,
+      discipline: session.discipline,
       status: session.status,
       startedAt: session.startedAt,
       completedAt: session.completedAt,

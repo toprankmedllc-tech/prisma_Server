@@ -103,7 +103,7 @@ export class FindAllQuestionsDto {
     @ApiPropertyOptional()
     @IsOptional()
     @IsString()
-    system?: string;
+    organSystem?: string;
 
     @ApiPropertyOptional()
     @IsOptional()
@@ -166,8 +166,8 @@ export class UpdateQuestionDto {
     @IsOptional() @IsString() topicId?: string;
     @IsOptional() @IsEnum(Difficulty) difficulty?: Difficulty;
     @IsOptional() @IsString() sourceType?: QuestionSourceType;
-    @IsOptional() @IsString() system?: string | null;
-    @IsOptional() @IsString() discipline?: string | null;
+    @IsOptional() @IsString() organSystemId?: string | null;
+    @IsOptional() @IsString() disciplineId?: string | null;
     @IsOptional() @IsString() patientProfile?: string | null;
     @IsOptional() @IsString() chiefComplaint?: string | null;
     @IsOptional() @IsArray() @IsString({ each: true }) keySymptoms?: string[];

@@ -498,6 +498,36 @@ export class QuestionGenerationService {
             for (const tag of allTags) { tagNameToId.set(tag.name, tag.id); }
         }
 
+        // Pre-fetch or create organ systems and disciplines
+        const allSystemNames = [...new Set(questions.map(q => q.system).filter(Boolean) as string[])];
+        const allDisciplineNames = [...new Set(questions.map(q => q.discipline).filter(Boolean) as string[])];
+        const organSystemMap = new Map<string, string>();
+        const disciplineMap = new Map<string, string>();
+
+        for (const name of allSystemNames) {
+            let os = await this.prisma.organSystem.findFirst({
+                where: { name: { equals: name, mode: 'insensitive' } },
+            });
+            if (!os) {
+                os = await this.prisma.organSystem.create({
+                    data: { name, description: `${name} questions for USMLE preparation` },
+                });
+            }
+            organSystemMap.set(name.toLowerCase(), os.id);
+        }
+
+        for (const name of allDisciplineNames) {
+            let d = await this.prisma.discipline.findFirst({
+                where: { name: { equals: name, mode: 'insensitive' } },
+            });
+            if (!d) {
+                d = await this.prisma.discipline.create({
+                    data: { name, description: `${name} questions for USMLE preparation` },
+                });
+            }
+            disciplineMap.set(name.toLowerCase(), d.id);
+        }
+
         const createdQuestions = await this.prisma.$transaction(
             questions.map((q) => {
                 const tagIds = q.tags.filter(Boolean).map(t => t.trim()).filter(t => tagNameToId.has(t)).map(t => tagNameToId.get(t)!).filter(Boolean);
@@ -505,7 +535,9 @@ export class QuestionGenerationService {
                     data: {
                         stem: q.stem, leadInQuestion: q.leadInQuestion || null, explanation: q.explanation,
                         source: 'AI_GENERATED', sourceType: sourceType === QuestionSourceType.BUZZWORD ? 'BUZZWORD' : 'VIGNETTE',
-                        topicId, system: q.system || null, discipline: q.discipline || null,
+                        topicId,
+                        organSystemId: q.system ? organSystemMap.get(q.system.toLowerCase()) : undefined,
+                        disciplineId: q.discipline ? disciplineMap.get(q.discipline.toLowerCase()) : undefined,
                         cognitiveLevel: this.mapCognitiveLevel(q.cognitiveLevel), difficulty: this.mapDifficulty(q.difficulty),
                         trapType: q.trapType || null, patientProfile: q.patientProfile || null,
                         chiefComplaint: q.chiefComplaint || null, keySymptoms: q.keySymptoms || [],
@@ -534,13 +566,13 @@ export class QuestionGenerationService {
     }
 
     private async findOrCreateTopic(topicName: string) {
-        let topic = await this.prisma.topic.findFirst({ where: { name: topicName }, include: { subject: true } });
+        let topic = await this.prisma.topic.findFirst({ where: { name: topicName }, include: { discipline: true } });
         if (!topic) {
-            let subject = await this.prisma.subject.findFirst({ where: { name: 'Clinical Medicine' } });
+            let subject = await this.prisma.discipline.findFirst({ where: { name: 'Clinical Medicine' } });
             if (!subject) {
-                subject = await this.prisma.subject.create({ data: { name: 'Clinical Medicine', description: 'Clinical medicine topics for USMLE preparation' } });
+                subject = await this.prisma.discipline.create({ data: { name: 'Clinical Medicine', description: 'Clinical medicine topics for USMLE preparation' } });
             }
-            topic = await this.prisma.topic.create({ data: { name: topicName, subjectId: subject.id }, include: { subject: true } });
+            topic = await this.prisma.topic.create({ data: { name: topicName, disciplineId: subject.id }, include: { discipline: true } });
             this.logger.log(`Created new topic: "${topicName}"`);
         }
         return topic;

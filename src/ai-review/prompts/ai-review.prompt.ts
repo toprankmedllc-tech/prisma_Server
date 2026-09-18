@@ -146,8 +146,8 @@ ${humanReviewSection}
 - Source Type: ${question.sourceType || 'N/A'}
 - Topic: ${question.topic?.name || 'N/A'}
 - Subject: ${question.topic?.subject?.name || 'N/A'}
-- System: ${question.system || 'N/A'}
-- Discipline: ${question.discipline || 'N/A'}
+- System: ${question.organSystem?.name || 'N/A'}
+- Discipline: ${question.discipline?.name || 'N/A'}
 - Difficulty: ${question.difficulty}
 - Cognitive Level: ${question.cognitiveLevel || 'N/A'}
 - Trap Type: ${question.trapType || 'N/A'}

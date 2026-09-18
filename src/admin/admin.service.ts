@@ -190,7 +190,7 @@ export class AdminService {
                 where: { id: { in: reviewedIds } },
                 include: {
                     topic: {
-                        include: { subject: true },
+                        include: { discipline: true },
                     },
                     qualityReview: true,
                 },
@@ -206,7 +206,7 @@ export class AdminService {
                 difficulty: q.difficulty,
                 sourceType: q.sourceType,
                 topic: q.topic.name,
-                subject: q.topic.subject.name,
+                subject: q.topic.discipline.name,
                 reviewed: q.reviewed,
                 rejected: q.rejected,
                 isPublished: q.isPublished,
@@ -308,13 +308,22 @@ export class AdminService {
 
         // Get system breakdown
         const systemGroups = await this.prisma.question.groupBy({
-            by: ['system'],
-            where: { system: { not: null } },
+            by: ['organSystemId'],
+            where: { organSystemId: { not: null } },
             _count: true,
         });
+        const organSystemMap = new Map<string, string>();
+        const organSystems = await this.prisma.organSystem.findMany({
+            select: { id: true, name: true },
+        });
+        organSystems.forEach(os => organSystemMap.set(os.id, os.name));
+
         const bySystem: Record<string, number> = {};
         systemGroups.forEach((group) => {
-            if (group.system) bySystem[group.system] = group._count;
+            if (group.organSystemId) {
+                const name = organSystemMap.get(group.organSystemId);
+                if (name) bySystem[name] = group._count;
+            }
         });
 
         // Get subject and topic breakdown
@@ -323,7 +332,7 @@ export class AdminService {
             _count: true,
         });
         const allTopics = await this.prisma.topic.findMany({
-            include: { subject: true },
+            include: { discipline: true },
         });
         const topicCountMap = new Map<string, number>();
         topicCounts.forEach((g) => topicCountMap.set(g.topicId, g._count));
@@ -333,7 +342,7 @@ export class AdminService {
 
         for (const topic of allTopics) {
             const count = topicCountMap.get(topic.id) || 0;
-            const subjectName = topic.subject.name;
+            const subjectName = topic.discipline.name;
             bySubject[subjectName] = (bySubject[subjectName] || 0) + count;
             byTopic[topic.name] = count;
         }

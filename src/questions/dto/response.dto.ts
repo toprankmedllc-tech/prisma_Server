@@ -3,11 +3,11 @@ import { Difficulty, QuestionSource, QuestionSourceType, CognitiveLevel } from '
 // export class TopicResponseDto {
 //     id!: string;
 //     name!: string;
-//     subjectId!: string;
+//     disciplineId!: string;
 //     questionCount?: number;
 // }
 
-export class SubjectResponseDto {
+export class DisciplineResponseDto {
     id!: string;
     name!: string;
     description!: string | null;
@@ -91,9 +91,8 @@ export class QuestionDetailDto {
     sourceFile!: string | null;
     qid!: string | null;
     topicId!: string;
-    system!: string | null;
-    discipline!: string | null;
-    subsystem!: string | null;
+    organSystem!: { id: string; name: string } | null;
+    discipline!: { id: string; name: string } | null;
     cognitiveLevel!: CognitiveLevel | null;
     difficulty!: Difficulty;
     trapType!: string | null;
