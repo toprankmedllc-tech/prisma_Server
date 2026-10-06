@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Get, Param, Req, Res, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Req, Res, UseGuards, UnauthorizedException, Query } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -6,13 +6,15 @@ import { LoginDto } from './dto/login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 
 interface RequestWithUser extends Request {
   user: {
     id: string;
     email: string;
+    firstName?: string;
+    lastName?: string;
   };
 }
 
@@ -21,31 +23,20 @@ interface RequestWithUser extends Request {
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  private setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
-    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+  private setAuthCookies(res: Response, accessToken: string) {
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
 
     res.cookie('access_token', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: thirtyDays,
-      path: '/',
-    });
-
-    // Keep the refresh cookie/API available for existing API clients.
-    res.cookie('refresh_token', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: thirtyDays,
+      maxAge: sevenDays,
       path: '/',
     });
   }
 
   private clearAuthCookies(res: Response) {
     res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/auth/refresh' });
   }
 
   @Post('register')
@@ -57,23 +48,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Login with email/password. Sets httpOnly cookies for auth.' })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(dto);
-    this.setAuthCookies(res, result.access_token, result.refresh_token);
-    return result;
-  }
-
-  @Post('refresh')
-  @ApiOperation({ summary: 'Refresh access token using refresh_token from cookie or body.' })
-  async refreshToken(
-    @Body() dto: RefreshTokenDto,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const refreshToken = req.cookies?.['refresh_token'] || dto.refreshToken;
-    if (!refreshToken) {
-      throw new UnauthorizedException('Refresh token is required');
-    }
-    const result = await this.authService.refreshToken(refreshToken);
-    this.setAuthCookies(res, result.access_token, result.refresh_token);
+    this.setAuthCookies(res, result.access_token);
     return result;
   }
 
@@ -104,5 +79,38 @@ export class AuthController {
     const result = await this.authService.logout(req.user.id);
     this.clearAuthCookies(res);
     return result;
+  }
+
+  // Google OAuth endpoints
+  @Get('google')
+  @UseGuards(GoogleAuthGuard)
+  @ApiOperation({ summary: 'Initiate Google OAuth login' })
+  async googleLogin() {
+    // This endpoint initiates the Google OAuth flow
+    // The guard will redirect to Google
+  }
+
+  @Get('google/callback')
+  @UseGuards(GoogleAuthGuard)
+  @ApiOperation({ summary: 'Google OAuth callback' })
+  async googleLoginCallback(
+    @Req() req: Request,
+    @Res() res: Response,
+    // @Query('redirect') redirect?: string,
+  ) {
+    const user = req.user as any;
+    if (!user) {
+      throw new UnauthorizedException('Google authentication failed');
+    }
+
+    // Generate JWT token
+    const accessToken = await this.authService.generateAccessToken(user.id, user.email);
+
+    // Set auth cookie
+    this.setAuthCookies(res, accessToken);
+
+    // Return user info and redirect
+    const redirectUrl =  process.env.REDIRECT_URL || 'http://localhost:3000/dashboard';
+    res.redirect(redirectUrl);
   }
 }

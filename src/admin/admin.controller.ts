@@ -11,6 +11,7 @@ import {
     HttpStatus,
     UseGuards,
     Req,
+    Put,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { ApiTags, ApiOperation, ApiQuery, ApiCookieAuth } from '@nestjs/swagger';
@@ -37,6 +38,9 @@ import { DocumentIngestionService } from '../documents/documents-ingestion.servi
 import { DocumentResponseDto, DocumentDetailResponseDto, DocumentIngestionResultDto } from '../documents/dto/document-response.dto';
 import { UploadDocumentDto, ReingestDocumentDto } from '../documents/dto/upload-document.dto';
 import { QuestionQueueService } from '../question-queue/question-queue.service';
+import { CreateExamDto } from '../exams/dto/create-exam.dto';
+import { UpdateExamDto } from '../exams/dto/update-exam.dto';
+import { ExamService } from '../exams/services/exam.service';
 
 interface RequestWithUser extends Request {
     user: {
@@ -57,7 +61,8 @@ export class AdminController {
         private readonly documentsService: DocumentsService,
         private readonly documentIngestionService: DocumentIngestionService,
         private readonly questionQueueService: QuestionQueueService,
-    ) {}
+        private readonly examService: ExamService
+    ) { }
 
     // ============================================
     // DASHBOARD SUMMARY
@@ -161,12 +166,12 @@ export class AdminController {
             description: s.description,
             ...(s.topics
                 ? {
-                      topics: s.topics.map((t: any) => ({
-                          topicId: t.id,
-                          topic: t.name,
-                          questionCount: t.questionCount || 0,
-                      })),
-                  }
+                    topics: s.topics.map((t: any) => ({
+                        topicId: t.id,
+                        topic: t.name,
+                        questionCount: t.questionCount || 0,
+                    })),
+                }
                 : {}),
         })) as any;
     }
@@ -460,6 +465,57 @@ export class AdminController {
         @Param('id') id: string,
     ): Promise<void> {
         return this.documentsService.delete(id);
+    }
+
+
+    // ============================================
+    // Exam  MANAGEMENT 
+    // ============================================
+
+
+    @Post('exams/create')
+    @ApiOperation({ summary: 'Create a new exam with random question selection per block ' })
+    async createExam(@Body() dto: CreateExamDto) {
+        return this.examService.createExam(dto);
+    }
+
+    @Get('exams')
+    @ApiOperation({ summary: 'List all exams' })
+    async getExams() {
+        return this.examService.getExams();
+    }
+
+    @Get(':id/exam')
+    @ApiOperation({ summary: 'Get exam details with blocks, questions, and attempts' })
+    async getExam(@Param('id') id: string) {
+        return this.examService.getExamById(id);
+    }
+
+    @Put(':id/exam')
+    @ApiOperation({ summary: 'Update exam settings and optionally reassign questions' })
+    async updateExam(@Param('id') id: string, @Body() dto: UpdateExamDto) {
+        return this.examService.updateExam(id, dto);
+    }
+
+
+    @Delete(':id/exam')
+    @ApiOperation({ summary: 'Permanently delete an exam (use disable instead when possible)' })
+    async deleteExam(@Param('id') id: string) {
+        return this.examService.deleteExam(id);
+    }
+
+    @Patch(':id/exam/toggle-active')
+    @ApiOperation({ summary: 'Enable or disable an exam (disable instead of delete)' })
+    async toggleActive(@Param('id') id: string) {
+        const exam = await this.examService.getExamById(id);
+        return this.examService.updateExam(id, { isActive: !exam.isActive });
+    }
+
+    @Post(':id/exam/randomize')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Randomize the questions for the exam' })
+    async regenerateExam(@Param('id') id: string) {
+        return this.examService.regenerateExam(id);
     }
 }
 

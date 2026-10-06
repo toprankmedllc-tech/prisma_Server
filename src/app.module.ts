@@ -18,6 +18,7 @@ import { HighlightModule } from './highlights/highlight.module';
 import { UserAnalyticsModule } from './user-analytics/user-analytics.module';
 import { ArenaModule } from './arena/arena.module';
 import { SocialModule } from './social/social.module';
+import { ReviewModule } from './review/review.module';
 
 @Module({
   imports: [
@@ -70,21 +71,29 @@ import { SocialModule } from './social/social.module';
       },
     }),
     AuthModule,
-    PrismaModule,
-    ExamsModule,
-    QuestionsModule,
-    ChromaModule,
-    LLMModule,
-    DocumentsModule,
     DashboardModule,
-    AdminModule,
-    QuestionQueueModule,
-    AiReviewModule,
+    ExamsModule,
     StudyModule,
+    QuestionsModule,
+    AiReviewModule,
+    ReviewModule,
+    AdminModule,
+    // UserAnalyticsModule,
     HighlightModule,
-    UserAnalyticsModule,
+
+
+    
     ArenaModule,
     SocialModule,
+    ChromaModule,
+    PrismaModule,
+    LLMModule,
+    DocumentsModule,
+    QuestionQueueModule,
+
+
+
+
   ],
 })
 export class AppModule { }

@@ -15,12 +15,12 @@ interface RequestWithUser extends Request {
   user: { id: string };
 }
 
-@ApiTags('Exams')
+@ApiTags('Mock Exams ')
 @ApiCookieAuth('access_token')
 @UseGuards(JwtAuthGuard)
 @Controller('exams')
 export class ExamController {
-  constructor(private readonly examService: ExamService) {}
+  constructor(private readonly  examService: ExamService) {}
 
   @Post('mock')
   @ApiOperation({ summary: 'Create a student-owned mock exam' })
@@ -35,7 +35,7 @@ export class ExamController {
   }
 
   @Get('mock/available')
-  @ApiOperation({ summary: 'List active admin-created exams available to students' })
+  @ApiOperation({ summary: 'List active admin-created exams available to students , (Depreceated )' })
   async getAvailableAdminExams(@Req() req: RequestWithUser) {
     return this.examService.getAvailableAdminExams(req.user.id);
   }
@@ -77,18 +77,6 @@ export class ExamController {
     return this.examService.getMockResults(attemptId, req.user.id);
   }
 
-  @Post()
-  @UseGuards(AdminGuard)
-  @ApiOperation({ summary: 'Create a new exam with random question selection per block' })
-  async createExam(@Body() dto: CreateExamDto) {
-    return this.examService.createExam(dto);
-  }
-
-  @Get()
-  @ApiOperation({ summary: 'List all exams' })
-  async getExams() {
-    return this.examService.getExams();
-  }
 
   @Patch(':examId/questions/:questionId/flag')
   @ApiOperation({ summary: 'Flag or unflag a question in an admin or mock exam' })
@@ -102,39 +90,7 @@ export class ExamController {
     return this.examService.getQuestionFlag(req.user.id, examId, questionId);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Get exam details with blocks, questions, and attempts' })
-  async getExam(@Param('id') id: string) {
-    return this.examService.getExamById(id);
-  }
 
-  @Put(':id')
-  @UseGuards(AdminGuard)
-  @ApiOperation({ summary: 'Update exam settings and optionally reassign questions' })
-  async updateExam(@Param('id') id: string, @Body() dto: UpdateExamDto) {
-    return this.examService.updateExam(id, dto);
-  }
 
-  @Patch(':id/toggle-active')
-  @UseGuards(AdminGuard)
-  @ApiOperation({ summary: 'Enable or disable an exam (disable instead of delete)' })
-  async toggleActive(@Param('id') id: string) {
-    const exam = await this.examService.getExamById(id);
-    return this.examService.updateExam(id, { isActive: !exam.isActive });
-  }
 
-  @Post(':id/regenerate')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(AdminGuard)
-  @ApiOperation({ summary: 'Regenerate questions for the exam (re-randomize)' })
-  async regenerateExam(@Param('id') id: string) {
-    return this.examService.regenerateExam(id);
-  }
-
-  @Delete(':id')
-  @UseGuards(AdminGuard)
-  @ApiOperation({ summary: 'Permanently delete an exam (use disable instead when possible)' })
-  async deleteExam(@Param('id') id: string) {
-    return this.examService.deleteExam(id);
-  }
 }

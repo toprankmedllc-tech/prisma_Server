@@ -7,9 +7,10 @@ import { AuthModule } from '../auth/auth.module';
 import { QuestionsModule } from '../questions/questions.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { QuestionQueueModule } from '../question-queue/question-queue.module';
+import { ExamsModule } from '../exams/exams.module';
 
 @Module({
-    imports: [PrismaModule, AuthModule, QuestionsModule, DocumentsModule, QuestionQueueModule],
+    imports: [PrismaModule, AuthModule, QuestionsModule, DocumentsModule, QuestionQueueModule , ExamsModule],
     controllers: [AdminController],
     providers: [AdminService, AdminGuard],
     exports: [AdminService],

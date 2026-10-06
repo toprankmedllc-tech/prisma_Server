@@ -173,6 +173,7 @@ export class ExamService {
 
   async regenerateExam(id: string) {
     const exam = await this.prisma.exam.findUnique({ where: { id } });
+    
     if (!exam) throw new NotFoundException(`Exam with ID ${id} not found`);
 
     await this.prisma.examQuestion.deleteMany({ where: { examId: id } });

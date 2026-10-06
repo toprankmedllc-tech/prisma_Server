@@ -35,14 +35,14 @@ interface RequestWithUser extends Request {
 
 @ApiTags('AI Review')
 @ApiCookieAuth('access_token')
-@Controller()
+@Controller("ai-review")
 export class AiReviewController {
   constructor(private readonly aiReviewService: AiReviewService) {}
 
   // ============================================
   // REVIEW A SINGLE QUESTION (admin-only, synchronous)
   // ============================================
-  @Post('admin/ai-review/review/:questionId')
+  @Post('/:questionId')
   @UseGuards(JwtAuthGuard, AdminGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -64,10 +64,11 @@ export class AiReviewController {
     });
   }
 
+
   // ============================================
   // BATCH REVIEW QUESTIONS (admin-only, synchronous)
   // ============================================
-  @Post('admin/ai-review/batch')
+  @Post('/batch')
   @UseGuards(JwtAuthGuard, AdminGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -91,7 +92,7 @@ export class AiReviewController {
   // ============================================
   // GET UNREVIEWED QUESTIONS (for admin to select for batch review)
   // ============================================
-  @Get('admin/ai-review/unreviewed')
+  @Get('/unreviewed')
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiOperation({
     summary: 'Get unreviewed questions for AI review',
@@ -119,7 +120,7 @@ export class AiReviewController {
   // ============================================
   // GET REVIEWED QUESTIONS (with AI review + full details)
   // ============================================
-  @Get('admin/ai-review/reviewed')
+  @Get('/reviewed')
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiOperation({
     summary: 'Get reviewed questions with AI review data',
@@ -147,24 +148,13 @@ export class AiReviewController {
     });
   }
 
-  // ============================================
-  // GET AI REVIEW SUMMARY STATS
-  // ============================================
-  @Get('admin/ai-review/summary')
-  @UseGuards(JwtAuthGuard, AdminGuard)
-  @ApiOperation({
-    summary: 'Get AI review summary statistics',
-    description:
-      'Returns aggregate statistics for all AI reviews: total reviews, pass/fail counts, and average scores across all dimensions.',
-  })
-  async getReviewSummary(): Promise<AiReviewSummaryDto> {
-    return this.aiReviewService.getReviewSummary();
-  }
+
+
 
   // ============================================
   // GET AI REVIEW FOR A SPECIFIC QUESTION
   // ============================================
-  @Get('questions/:questionId/ai-review')
+  @Get('/question/:questionId')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: 'Get AI review result for a question',
@@ -180,7 +170,7 @@ export class AiReviewController {
   // ============================================
   // GET COMPLETE AI REVIEW HISTORY FOR A QUESTION
   // ============================================
-  @Get('questions/:questionId/ai-review/history')
+  @Get('/history/question/:questionId')
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: 'Get all AI review attempts for a question',
@@ -190,10 +180,25 @@ export class AiReviewController {
     return this.aiReviewService.getReviewHistory(questionId);
   }
 
+
+  // ============================================
+  // GET AI REVIEW SUMMARY STATS
+  // ============================================
+  @Get('/summary')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @ApiOperation({
+    summary: 'Get AI review summary statistics',
+    description:
+      'Returns aggregate statistics for all AI reviews: total reviews, pass/fail counts, and average scores across all dimensions.',
+  })
+  async getReviewSummary(): Promise<AiReviewSummaryDto> {
+    return this.aiReviewService.getReviewSummary();
+  }
+
   // ============================================
   // UPDATE AN EXISTING AI REVIEW (admin override)
   // ============================================
-  @Patch('admin/ai-review/:reviewId')
+  @Patch('/:reviewId/admin-override')
   @UseGuards(JwtAuthGuard, AdminGuard)
   @ApiOperation({
     summary: 'Update an AI review record (admin override)',

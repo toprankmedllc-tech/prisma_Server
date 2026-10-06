@@ -32,7 +32,7 @@ interface RequestWithUser extends Request {
 
 import { DisciplineResponseDto } from './dto/response.dto';
 
-@ApiTags('Questions')
+@ApiTags('Questions Filter & Summary !')
 @ApiCookieAuth('access_token')
 @UseGuards(JwtAuthGuard)
 @Controller('questions')
@@ -43,98 +43,76 @@ export class QuestionsController {
         private readonly questionQueueService: QuestionQueueService,
     ) { }
 
-   
 
-    @Post('generate')
-    @HttpCode(HttpStatus.CREATED)
-    @ApiOperation({ summary: '(Deprecated) Generate AI questions synchronously', description: 'Uses RAG (ChromaDB + LLM) to generate USMLE-style questions based on topic, difficulty, and question type. This endpoint blocks until generation is complete. For large generation, use the async endpoint instead.' })
-    async generateQuestions(@Body() dto: GenerateQuestionsDto): Promise<GenerateQuestionsResponseDto> {
-        return this.questionGenerationService.generateQuestions(dto);
-    }
+
+    // @Post('generate')
+    // @HttpCode(HttpStatus.CREATED)
+    // @ApiOperation({ summary: '(Deprecated) Generate AI questions synchronously', description: 'Uses RAG (ChromaDB + LLM) to generate USMLE-style questions based on topic, difficulty, and question type. This endpoint blocks until generation is complete. For large generation, use the async endpoint instead.' })
+    // async generateQuestions(@Body() dto: GenerateQuestionsDto): Promise<GenerateQuestionsResponseDto> {
+    //     return this.questionGenerationService.generateQuestions(dto);
+    // }
 
     // ============================================
     // ASYNC QUESTION GENERATION (queue-based)
     // ============================================
-    @Post('generate-async')
-    @HttpCode(HttpStatus.ACCEPTED)
-    @ApiOperation({
-        summary: 'Queue AI question generation (async)',
-        description: 'Queues a question generation job in the background using BullMQ. Returns a job ID immediately. The frontend can use Socket.IO to listen for completion events on "generation:completed" with the jobId and generated question IDs.',
-    })
-    async generateQuestionsAsync(
-        @Req() req: RequestWithUser,
-        @Body() dto: GenerateQuestionsDto,
-    ): Promise<{
-        jobId: string;
-        status: string;
-        message: string;
-    }> {
-        return this.questionQueueService.queueGeneration(dto, req.user.id);
-    }
+    // @Post('generate-async')
+    // @HttpCode(HttpStatus.ACCEPTED)
+    // @ApiOperation({
+    //     summary: 'Queue AI question generation (async)',
+    //     description: 'Queues a question generation job in the background using BullMQ. Returns a job ID immediately. The frontend can use Socket.IO to listen for completion events on "generation:completed" with the jobId and generated question IDs.',
+    // })
+    // async generateQuestionsAsync(
+    //     @Req() req: RequestWithUser,
+    //     @Body() dto: GenerateQuestionsDto,
+    // ): Promise<{
+    //     jobId: string;
+    //     status: string;
+    //     message: string;
+    // }> {
+    //     return this.questionQueueService.queueGeneration(dto, req.user.id);
+    // }
     // ============================================
     // GET QUEUE JOB STATUS
     // ============================================
-    @Get('generate-async/:jobId')
-    @ApiOperation({
-        summary: 'Get generation job status',
-        description: 'Returns the current status of an async question generation job. Use this to poll for status if not using Socket.IO.',
-    })
-    async getGenerationJobStatus(
-        @Param('jobId') jobId: string,
-    ): Promise<{
-        id: string;
-        status: string;
-        params: any;
-        questionIds: string[];
-        questionCount: number;
-        errorMessage: string | null;
-        createdAt: Date;
-        updatedAt: Date;
-    } | null> {
-        return this.questionQueueService.getJobStatus(jobId);
-    }
+    // @Get('generate-async/:jobId')
+    // @ApiOperation({
+    //     summary: 'Get generation job status',
+    //     description: 'Returns the current status of an async question generation job. Use this to poll for status if not using Socket.IO.',
+    // })
+    // async getGenerationJobStatus(
+    //     @Param('jobId') jobId: string,
+    // ): Promise<{
+    //     id: string;
+    //     status: string;
+    //     params: any;
+    //     questionIds: string[];
+    //     questionCount: number;
+    //     errorMessage: string | null;
+    //     createdAt: Date;
+    //     updatedAt: Date;
+    // } | null> {
+    //     return this.questionQueueService.getJobStatus(jobId);
+    // }
     // ============================================
     // GET USER'S GENERATION JOBS
     // ============================================
-    @Get('generate-async/jobs/mine')
-    @ApiOperation({
-        summary: 'Get my generation jobs',
-        description: 'Returns the current user\'s recent question generation jobs, ordered by most recent first.',
-    })
-    async getMyGenerationJobs(
-        @Req() req: RequestWithUser,
-    ): Promise<Array<{
-        id: string;
-        status: string;
-        questionCount: number;
-        questionIds: string[];
-        errorMessage: string | null;
-        createdAt: Date;
-    }>> {
-        return this.questionQueueService.getUserJobs(req.user.id);
-    }
-
-    // ============================================
-    // REVIEW DASHBOARD: Get random questions by subject/topic
-    // ============================================
-    @Get('review-dashboard')
-    @ApiOperation({ summary: 'Review dashboard', description: 'Returns up to 20 random questions filtered by subject/topic for reviewer selection. Excludes questions the user has already reviewed or skipped. Used as the entry point for the review workflow.' })
-    @ApiQuery({ name: 'subject', required: false, type: String, description: 'Filter by subject name' })
-    @ApiQuery({ name: 'topic', required: false, type: String, description: 'Filter by topic name' })
-    @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max questions to return (default 20)' })
-    async getReviewDashboard(
-        @Req() req: RequestWithUser,
-        @Query('subject') subject?: string,
-        @Query('topic') topic?: string,
-        @Query('limit') limit?: string,
-    ): Promise<ReviewDashboardItemDto[]> {
-        return this.questionsService.getReviewDashboardQuestions({
-            userId: req.user.id,
-            subject,
-            topic,
-            limit: limit ? parseInt(limit) : 20,
-        });
-    }
+    // @Get('generate-async/jobs/mine')
+    // @ApiOperation({
+    //     summary: 'Get my generation jobs',
+    //     description: 'Returns the current user\'s recent question generation jobs, ordered by most recent first.',
+    // })
+    // async getMyGenerationJobs(
+    //     @Req() req: RequestWithUser,
+    // ): Promise<Array<{
+    //     id: string;
+    //     status: string;
+    //     questionCount: number;
+    //     questionIds: string[];
+    //     errorMessage: string | null;
+    //     createdAt: Date;
+    // }>> {
+    //     return this.questionQueueService.getUserJobs(req.user.id);
+    // }
 
     // ============================================
     // ENHANCED: Get all questions with more filters
@@ -200,6 +178,23 @@ export class QuestionsController {
         });
     }
 
+
+
+    // ============================================
+    // EDIT: Preserve a revision before applying admin changes
+    // ============================================
+    @Patch(':id/edit')
+    @UseGuards(AdminGuard)
+    @ApiOperation({ summary: 'Edit a question', description: 'Updates question content, creates an immutable pre-edit revision, invalidates prior approval, and leaves the question unpublished.' })
+    async editQuestion(
+        @Req() req: RequestWithUser,
+        @Param('id') id: string,
+        @Body() dto: UpdateQuestionDto,
+    ): Promise<QuestionDetailDto> {
+        return this.questionsService.updateQuestion(id, dto, req.user.id);
+    }
+
+
     // ============================================
     // SYSTEMS: Get all distinct organ systems from questions
     // ============================================
@@ -240,7 +235,7 @@ export class QuestionsController {
     @ApiQuery({ name: 'subjectId', required: false, type: String, description: 'Filter topics by subject ID' })
     async getTopics(
         @Query('subjectId') subjectId?: string,
-    ): Promise<{ totalTopics: number; totalQuestionsCount: number ; topics: { topicId: string; topic: string; questionCount: number }[];  }> {
+    ): Promise<{ totalTopics: number; totalQuestionsCount: number; topics: { topicId: string; topic: string; questionCount: number }[]; }> {
         return this.questionsService.getTopics(subjectId);
     }
 
@@ -278,167 +273,12 @@ export class QuestionsController {
 
 
 
-    // ============================================
-    // REVIEWED: Get questions reviewed by the current user
-    // ============================================
-    @Get('reviewed')
-    @ApiOperation({ summary: 'Get reviewed questions', description: 'Returns paginated list of questions the current user has reviewed (approved or rejected). Ordered by most recently reviewed first.' })
-    @ApiQuery({ name: 'skip', required: false, type: Number, description: 'Number of records to skip (default 0)' })
-    @ApiQuery({ name: 'take', required: false, type: Number, description: 'Number of records to take (default 50)' })
-    async getReviewedQuestions(
-        @Req() req: RequestWithUser,
-        @Query('skip') skip?: string,
-        @Query('take') take?: string,
-    ): Promise<{
-        data: ReviewDashboardItemDto[];
-        total: number;
-        page: number;
-        limit: number;
-    }> {
-        return this.questionsService.getReviewedQuestionsByUser(req.user.id, {
-            skip: skip ? parseInt(skip) : undefined,
-            take: take ? parseInt(take) : undefined,
-        });
-    }
-
-    // ============================================
-    // SKIPPED: Get questions skipped by the current user
-    // ============================================
-    @Get('skipped')
-    @ApiOperation({ summary: 'Get skipped questions', description: 'Returns paginated list of questions the current user has skipped. Ordered by most recently skipped first.' })
-    @ApiQuery({ name: 'skip', required: false, type: Number, description: 'Number of records to skip (default 0)' })
-    @ApiQuery({ name: 'take', required: false, type: Number, description: 'Number of records to take (default 50)' })
-    async getSkippedQuestions(
-        @Req() req: RequestWithUser,
-        @Query('skip') skip?: string,
-        @Query('take') take?: string,
-    ): Promise<{
-        data: ReviewDashboardItemDto[];
-        total: number;
-        page: number;
-        limit: number;
-    }> {
-        return this.questionsService.getSkippedQuestionsByUser(req.user.id, {
-            skip: skip ? parseInt(skip) : undefined,
-            take: take ? parseInt(take) : undefined,
-        });
-    }
-
-    // ============================================
-    // USER PREFERENCES: Get user's preferred subjects for review assignment
-    // ============================================
-    @Get('preferences')
-    @ApiOperation({ summary: 'Get user preferences', description: 'Returns the user\'s preferred subjects for question assignment in the review dashboard.' })
-    async getUserPreferences(
-        @Req() req: RequestWithUser,
-    ): Promise<{ preferredSubjects: string[] }> {
-        return this.questionsService.getUserPreferences(req.user.id);
-    }
-
-    // ============================================
-    // USER PREFERENCES: Update user's preferred subjects
-    // ============================================
-    @Patch('preferences')
-    @ApiOperation({ summary: 'Update user preferences', description: 'Saves the user\'s preferred subjects for question assignment.' })
-    async updateUserPreferences(
-        @Req() req: RequestWithUser,
-        @Body() body: { preferredSubjects: string[] },
-    ): Promise<{ preferredSubjects: string[] }> {
-        return this.questionsService.updateUserPreferences(req.user.id, body.preferredSubjects);
-    }
-
-    // ============================================
-    // ASSIGN: Assign 20 questions to the user exclusively
-    // ============================================
-    @Post('assign')
-    @ApiOperation({ summary: 'Assign questions to user', description: 'Finds 20 unassigned questions matching the user\'s preferred subjects and locks them exclusively to this user. Other reviewers will not get these questions.' })
-    async assignQuestions(
-        @Req() req: RequestWithUser,
-        @Body() body: { subjects?: string[] },
-    ): Promise<ReviewDashboardItemDto[]> {
-        return this.questionsService.assignQuestionsToUser(req.user.id, body.subjects);
-    }
-
-    // ============================================
-    // REVIEW: Get full question with less details
-    // ============================================
-
-
-
-    @Get(':id')
-    @ApiOperation({ summary: 'Get question by ID with limited details', description: 'Returns a single question with its choices, tags, and topic. Does not include wrong options, vitals, or quality review.' })
-    async findOne(@Param('id') id: string): Promise<QuestionResponseDto> {
-        return this.questionsService.findOneQuestion(id);
-    }
-
-    // ============================================
-    // REVIEW: Get full question detail for review
-    // ============================================
-    @Get(':id/detail')
-    @ApiOperation({ summary: 'Get full question by ID with all details', description: 'Returns complete question data with all nested relations: choices, wrong options, vitals, quality review, tags, topic, and subject. Used for the review detail view.' })
-    async findDetail(@Param('id') id: string): Promise<QuestionDetailDto> {
-        return this.questionsService.findFullDetail(id);
-    }
     // @Patch(':id/publish')
     // @ApiOperation({ summary: 'Publish a question', description: 'Sets isPublished to true. Use after quality review is complete to make the question visible to students.' })
     // async publish(@Param('id') id: string): Promise<QuestionResponseDto> {
     //     return this.questionsService.publishQuestion(id);
     // }
 
-    // ============================================
-    // EDIT: Preserve a revision before applying admin changes
-    // ============================================
-    @Patch(':id/edit')
-    @UseGuards(AdminGuard)
-    @ApiOperation({ summary: 'Edit a question', description: 'Updates question content, creates an immutable pre-edit revision, invalidates prior approval, and leaves the question unpublished.' })
-    async editQuestion(
-        @Req() req: RequestWithUser,
-        @Param('id') id: string,
-        @Body() dto: UpdateQuestionDto,
-    ): Promise<QuestionDetailDto> {
-        return this.questionsService.updateQuestion(id, dto, req.user.id);
-    }
-
-    // ============================================
-    // REVIEW: Review a question (approve, reject, or add notes)
-    // ============================================
-    @Patch(':id/review')
-    @ApiOperation({ summary: 'Review a question', description: 'Mark a question as reviewed (approve or reject). Set  rejected=false to approve. Set rejected=true to reject. Returns full question detail after u set rejected = false  after that  send quality review data via another api below to publish the question .It is not necessary to send reviewedBy through body , in the backend it takes userId from cookies so that we can keep track of the  who reviewed the question .' })
-    async review(
-        @Req() req: RequestWithUser,
-        @Param('id') id: string,
-        @Body() dto: ReviewQuestionDto,
-    ): Promise<QuestionDetailDto> {
-        return this.questionsService.reviewQuestion(id, { ...dto, reviewedBy:  req.user.id });
-    }
-
-    // ============================================
-    // SKIP REVIEW: Add a question to the user's skip list
-    // ============================================
-    @Post(':id/skip-review')
-    @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Skip a question', description: 'Adds the question to the user\'s skipped list so it will not appear in future review dashboard queries. send only questionId in the param.  ' })
-    async skipReview(
-        @Req() req: RequestWithUser,
-        @Param('id') id: string,
-    ): Promise<{ skipped: boolean }> {
-        await this.questionsService.markQuestionAsSkipped(req.user.id, id);
-        return { skipped: true };
-    }
-
-    // ============================================
-    // QUALITY REVIEW: Save / update quality review for a question
-    // ============================================
-    @Patch(':id/quality-review')
-    @UseGuards(AdminGuard)
-    @ApiOperation({ summary: 'Complete quality review and publish', description: 'Requires prior human approval. Saves the quality review and publishes the question as the final controlled publication step.' })
-    async saveQualityReview(
-        @Req() req: RequestWithUser,
-        @Param('id') id: string,
-        @Body() dto: CreateQualityReviewDto,
-    ) {
-        return this.questionsService.saveQualityReview(id, { ...dto, reviewedBy: req.user.id });
-    }
 
     // ============================================
     // UNPUBLISH: Unpublish all questions by discipline
