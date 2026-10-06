@@ -19,6 +19,7 @@ import { UserAnalyticsModule } from './user-analytics/user-analytics.module';
 import { ArenaModule } from './arena/arena.module';
 import { SocialModule } from './social/social.module';
 import { ReviewModule } from './review/review.module';
+import { AdaptiveModule } from './adaptive/adaptive.module';
 
 @Module({
   imports: [
@@ -80,7 +81,7 @@ import { ReviewModule } from './review/review.module';
     AdminModule,
     // UserAnalyticsModule,
     HighlightModule,
-
+    AdaptiveModule,
 
     
     ArenaModule,

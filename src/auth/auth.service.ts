@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../common/email/email.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class AuthService {
@@ -229,10 +230,12 @@ export class AuthService {
       select: {
         id: true,
         email: true,
-        role: true,
         emailVerifiedAt: true,
         firstName: true,
         lastName: true,
+        bio: true,
+        avatarUrl: true,
+        displayStyle: true,
         studentType: true,
         targetExam: true,
         targetTestDate: true,
@@ -246,12 +249,59 @@ export class AuthService {
       lastName: user.lastName,
       email: user.email,
       id: user.id,
-      role: user.role,
+      bio: user.bio,
+      avatarUrl: user.avatarUrl,
+      displayStyle: user.displayStyle || 'TOPRANKMED',
       studentType: user.studentType,
       targetExam: user.targetExam,
       targetTestDate: user.targetTestDate,
       emailVerifiedAt: user.emailVerifiedAt
     };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        bio: dto.bio,
+        avatarUrl: dto.avatarUrl,
+        displayStyle: dto.displayStyle,
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        bio: true,
+        avatarUrl: true,
+        displayStyle: true,
+        studentType: true,
+        targetExam: true,
+        targetTestDate: true,
+      },
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      bio: user.bio,
+      avatarUrl: user.avatarUrl,
+      displayStyle: user.displayStyle,
+      studentType: user.studentType,
+      targetExam: user.targetExam,
+      targetTestDate: user.targetTestDate,
+    };
+  }
+
+  async changePassword(userId: string, newPassword: string) {
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: hashedPassword },
+    });
+    return { message: 'Password changed successfully' };
   }
 
   async findOrCreateGoogleUser(data: {

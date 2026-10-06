@@ -1,10 +1,12 @@
-import { Body, Controller, Post, Get, Param, Req, Res, UseGuards, UnauthorizedException, Query } from '@nestjs/common';
+import { Body, Controller, Post, Get, Param, Req, Res, UseGuards, UnauthorizedException, Query, Patch } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -71,6 +73,26 @@ export class AuthController {
   @Get('me')
   async getProfile(@Req() req: RequestWithUser) {
     return this.authService.getMyProfile(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('profile')
+  @ApiOperation({ summary: 'Update user profile (bio, avatar, display style)' })
+  async updateProfile(
+    @Req() req: RequestWithUser,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    return this.authService.updateProfile(req.user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @ApiOperation({ summary: 'Change password for authenticated user' })
+  async changePassword(
+    @Req() req: RequestWithUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(req.user.id, dto.newPassword);
   }
 
   @UseGuards(JwtAuthGuard)
