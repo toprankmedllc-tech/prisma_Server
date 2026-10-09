@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { LLMService } from '../llm/llm.service';
 import { ChromaService } from '../chroma/chroma.service';
 import type { QueryResult } from '../chroma/chroma.service';
@@ -10,8 +10,6 @@ import {
     BUZZWORD_QUESTION_USER_PROMPT,
     VIGNETTE_QUESTION_USER_PROMPT,
 } from '../llm/prompts/rag-question.prompt';
-import { AiReviewService } from '../ai-review/ai-review.service';
-// import { AiReviewService } from '../ai-review/ai-review.service';s
 
 // ============================================
 // INTERFACES
@@ -79,8 +77,6 @@ export class QuestionGenerationService {
         private llmService: LLMService,
         private chromaService: ChromaService,
         private prisma: PrismaService,
-        @Inject(forwardRef(() => AiReviewService))
-        private aiReviewService: AiReviewService,
     ) { }
 
     async generateQuestions(dto: GenerateQuestionsDto) {
@@ -138,10 +134,7 @@ export class QuestionGenerationService {
                 throw new Error(`Failed to save generated questions: ${saveError.message}`);
             }
 
-            // Step 7: Queue AI review for each generated question (fire-and-forget)
-            this.queueAiReviewsForQuestions(savedQuestions);
-
-            // Step 8: Format response
+            // Step 7: Format response
             return {
                 success: true,
                 message: `Successfully generated ${savedQuestions.length} ${dto.sourceType} question(s)`,
@@ -152,27 +145,6 @@ export class QuestionGenerationService {
         } catch (error: any) {
             this.logger.error(`Question generation failed: ${error.message}`);
             throw error; // Re-throw for the global exception filter to handle
-        }
-    }
-
-    // ============================================
-    // QUEUE AI REVIEWS FOR GENERATED QUESTIONS
-    // ============================================
-    private async queueAiReviewsForQuestions(questions: QuestionResponseDto[]): Promise<void> {
-        if (!questions || questions.length === 0) return;
-
-        this.logger.log(`Queueing AI review for ${questions.length} newly generated question(s)`);
-
-        for (const question of questions) {
-            try {
-                await this.aiReviewService.queueAiReviewForQuestion(question.id, {
-                    autoPublish: true,
-                    autoRegenerate: true,
-                });
-            } catch (error: any) {
-                // Non-blocking: if queueing fails, don't fail the generation
-                this.logger.warn(`Failed to queue AI review for question ${question.id}: ${error.message}`);
-            }
         }
     }
 

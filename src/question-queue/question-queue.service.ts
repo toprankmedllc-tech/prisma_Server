@@ -1,17 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
-import { QuestionGenerationGateway } from './question-generation.gateway';
 import { GenerateQuestionsDto } from '../questions/dto/request.dto';
 
 // ============================================
-// QUEUE SERVICE: Adds question generation jobs to the BullMQ queue
+// QUEUE SERVICE: Manages question generation jobs in PostgreSQL
 // ============================================
-// This service:
-// 1. Creates a GenerationJob record in PostgreSQL for persistence
-// 2. Adds the job to the BullMQ queue for background processing
-// 3. Returns the job ID to the frontend so it can track progress
+// This service uses PostgreSQL SKIP LOCKED for job queuing instead of Redis/BullMQ.
+// Jobs are stored in the GenerationJob table and processed by a background worker
+// that polls for queued jobs using SKIP LOCKED to claim them atomically.
 // ============================================
 
 @Injectable()
@@ -19,10 +15,7 @@ export class QuestionQueueService {
     private readonly logger = new Logger(QuestionQueueService.name);
 
     constructor(
-        @InjectQueue('question-generation')
-        private readonly questionGenerationQueue: Queue,
         private readonly prisma: PrismaService,
-        private readonly gateway: QuestionGenerationGateway,
     ) { }
 
     // ============================================
@@ -36,7 +29,7 @@ export class QuestionQueueService {
         status: string;
         message: string;
     }> {
-        // 1. Create a GenerationJob record in PostgreSQL
+        // Create a GenerationJob record in PostgreSQL with status "queued"
         const generationJob = await this.prisma.generationJob.create({
             data: {
                 userId: userId || null,
@@ -48,37 +41,6 @@ export class QuestionQueueService {
 
         const jobId = generationJob.id;
 
-        // 2. Add the job to BullMQ queue
-        // The job name matches the processor's consumer name
-        await this.questionGenerationQueue.add(
-            'generate-questions',
-            {
-                generationJobId: jobId,
-                userId: userId || 'anonymous',
-                dto,
-            },
-            {
-                // Remove job from queue after 24 hours
-                removeOnComplete: { age: 86400 },
-                removeOnFail: { age: 86400 },
-                // Retry up to 2 times on failure
-                attempts: 3,
-                backoff: {
-                    type: 'exponential',
-                    delay: 5000, // Start with 5s delay, then exponential
-                },
-            },
-        );
-
-        // 3. Emit a notification that the job has been queued
-        if (userId) {
-            this.gateway.emitJobQueued(userId, {
-                jobId,
-                status: 'queued',
-                message: `Queued generation of ${dto.count} ${dto.sourceType} question(s) on "${dto.topic}"`,
-            });
-        }
-
         this.logger.log(
             `Queued generation job ${jobId}: ${dto.count} ${dto.sourceType} question(s) on "${dto.topic}" (user: ${userId || 'anonymous'})`,
         );
@@ -86,8 +48,68 @@ export class QuestionQueueService {
         return {
             jobId,
             status: 'queued',
-            message: `Question generation queued. You'll be notified when it's complete.`,
+            message: `Question generation queued. You can check status at GET /admin/queue/jobs/${jobId}.`,
         };
+    }
+
+    // ============================================
+    // CLAIM NEXT QUEUED JOB (for background worker)
+    // ============================================
+    async claimNextJob(workerId: string): Promise<{
+        id: string;
+        params: any;
+        userId: string | null;
+    } | null> {
+        // Use SKIP LOCKED to atomically claim the next queued job
+        // This is the PostgreSQL-native way to do job queuing without Redis
+        const job = await this.prisma.$queryRaw<
+            Array<{
+                id: string;
+                params: any;
+                userId: string | null;
+            }>
+        >`
+            UPDATE "GenerationJob"
+            SET status = 'processing',
+                "updatedAt" = NOW()
+            WHERE id = (
+                SELECT id FROM "GenerationJob"
+                WHERE status = 'queued'
+                ORDER BY "createdAt" ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            RETURNING id, params, "userId"
+        `;
+
+        if (job.length === 0) {
+            return null;
+        }
+
+        return job[0];
+    }
+
+    // ============================================
+    // UPDATE JOB STATUS
+    // ============================================
+    async updateJobStatus(
+        jobId: string,
+        status: 'queued' | 'processing' | 'completed' | 'failed',
+        updates?: {
+            questionIds?: string[];
+            questionCount?: number;
+            errorMessage?: string;
+        },
+    ): Promise<void> {
+        await this.prisma.generationJob.update({
+            where: { id: jobId },
+            data: {
+                status,
+                ...(updates?.questionIds && { questionIds: updates.questionIds }),
+                ...(updates?.questionCount !== undefined && { questionCount: updates.questionCount }),
+                ...(updates?.errorMessage && { errorMessage: updates.errorMessage }),
+            },
+        });
     }
 
     // ============================================
@@ -174,101 +196,35 @@ export class QuestionQueueService {
     }
 
     // ============================================
-    // GET QUEUE METRICS & REDIS STATUS
+    // GET QUEUE METRICS (PostgreSQL-based)
     // ============================================
     async getQueueMetrics(): Promise<{
-        redisConnected: boolean;
         queueMetrics: {
-            waiting: number;
-            active: number;
+            queued: number;
+            processing: number;
             completed: number;
             failed: number;
-            delayed: number;
         };
     }> {
-        let redisConnected = false;
-        const counts = { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0 };
-
-        try {
-            // Check if Redis is reachable by getting queue job counts
-            const jobCounts = await this.questionGenerationQueue.getJobCounts();
-            counts.waiting = jobCounts.waiting || 0;
-            counts.active = jobCounts.active || 0;
-            counts.completed = jobCounts.completed || 0;
-            counts.failed = jobCounts.failed || 0;
-            counts.delayed = jobCounts.delayed || 0;
-            redisConnected = true;
-        } catch (error: any) {
-            this.logger.error(`Failed to get queue metrics from Redis: ${error.message}`);
-            redisConnected = false;
-        }
+        const [queued, processing, completed, failed] = await Promise.all([
+            this.prisma.generationJob.count({ where: { status: 'queued' } }),
+            this.prisma.generationJob.count({ where: { status: 'processing' } }),
+            this.prisma.generationJob.count({ where: { status: 'completed' } }),
+            this.prisma.generationJob.count({ where: { status: 'failed' } }),
+        ]);
 
         return {
-            redisConnected,
-            queueMetrics: counts,
+            queueMetrics: {
+                queued,
+                processing,
+                completed,
+                failed,
+            },
         };
     }
 
     // ============================================
-    // GET BULLMQ JOBS BY STATUS
-    // ============================================
-    async getBullJobsByStatus(
-        status: 'waiting' | 'active' | 'completed' | 'failed' | 'delayed',
-        limit = 20,
-    ): Promise<Array<{
-        bullJobId: string | number | undefined;
-        generationJobId: string;
-        status: string;
-        data: any;
-        failedReason?: string;
-        stacktrace?: string[];
-        processedOn?: string;
-        finishedOn?: string;
-        createdAt?: string;
-        attemptsMade: number;
-    }>> {
-        try {
-            let bullJobs;
-            switch (status) {
-                case 'waiting':
-                    bullJobs = await this.questionGenerationQueue.getWaiting(0, limit);
-                    break;
-                case 'active':
-                    bullJobs = await this.questionGenerationQueue.getActive(0, limit);
-                    break;
-                case 'completed':
-                    bullJobs = await this.questionGenerationQueue.getCompleted(0, limit);
-                    break;
-                case 'failed':
-                    bullJobs = await this.questionGenerationQueue.getFailed(0, limit);
-                    break;
-                case 'delayed':
-                    bullJobs = await this.questionGenerationQueue.getDelayed(0, limit);
-                    break;
-                default:
-                    bullJobs = [];
-            }
-
-            return bullJobs.map((job) => ({
-                bullJobId: job.id,
-                generationJobId: job.data?.generationJobId || 'unknown',
-                status: status,
-                data: job.data,
-                failedReason: job.failedReason,
-                stacktrace: job.stacktrace,
-                processedOn: job.processedOn ? new Date(job.processedOn).toISOString() : undefined,
-                finishedOn: job.finishedOn ? new Date(job.finishedOn).toISOString() : undefined,
-                createdAt: job.timestamp ? new Date(job.timestamp).toISOString() : undefined,
-                attemptsMade: job.attemptsMade,
-            }));
-        } catch (error: any) {
-            this.logger.error(`Failed to get BullMQ jobs for status ${status}: ${error.message}`);
-            return [];
-        }
-    }
-
-    // ============================================
-    // GET ALL JOBS FOR A USER
+    // GET USER'S GENERATION JOBS
     // ============================================
     async getUserJobs(
         userId: string,

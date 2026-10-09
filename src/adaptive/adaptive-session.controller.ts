@@ -28,7 +28,7 @@ export class AdaptiveSessionController {
 
   @UseGuards(JwtAuthGuard)
   @Post('sessions/:sessionId/attempts')
-  @ApiOperation({ summary: 'Record answer attempt' })
+  @ApiOperation({ summary: 'Record answer attempt' }) 
   async recordAnswer(
     @Req() req: RequestWithUser,
     @Param('sessionId') sessionId: string,

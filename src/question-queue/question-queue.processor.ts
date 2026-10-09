@@ -1,117 +1,99 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
-import { Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { QuestionQueueService } from './question-queue.service';
 import { QuestionGenerationService } from '../questions/question-generation.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { QuestionGenerationGateway } from './question-generation.gateway';
-import { GenerateQuestionsDto } from '../questions/dto/request.dto';
 
 // ============================================
-// BULLMQ WORKER: Processes question generation jobs in the background
+// BACKGROUND WORKER: Processes question generation jobs from PostgreSQL
 // ============================================
-// This worker picks up jobs from the "question-generation" queue and runs
-// the LLM-based question generation. On completion, it updates the
-// GenerationJob record in the database and emits a Socket.IO event.
+// This worker polls the GenerationJob table for "queued" jobs using
+// PostgreSQL's SKIP LOCKED feature to atomically claim jobs.
+// No Redis or BullMQ required.
 // ============================================
 
-@Processor('question-generation', {
-    concurrency: 2, // Process up to 2 jobs simultaneously
-})
-export class QuestionQueueProcessor extends WorkerHost {
+@Injectable()
+export class QuestionQueueProcessor implements OnModuleInit {
     private readonly logger = new Logger(QuestionQueueProcessor.name);
+    private readonly workerId = `worker-${Date.now()}`;
+    private isRunning = false;
+    private pollInterval: NodeJS.Timeout | null = null;
 
     constructor(
+        private readonly questionQueueService: QuestionQueueService,
         private readonly questionGenerationService: QuestionGenerationService,
         private readonly prisma: PrismaService,
-        private readonly gateway: QuestionGenerationGateway,
-    ) {
-        super();
+    ) { }
+
+    async onModuleInit() {
+        this.logger.log(`QuestionQueueProcessor initialized (workerId: ${this.workerId})`);
+        this.startWorker();
     }
 
-    async process(job: Job<{
-        generationJobId: string;
-        userId: string;
-        dto: GenerateQuestionsDto;
-    }>, token?: string): Promise<any> {
-        const { generationJobId, userId, dto } = job.data;
+    private startWorker() {
+        this.isRunning = true;
+        this.logger.log('Starting PostgreSQL-based question generation worker...');
 
-        this.logger.log(
-            `Processing job ${job.id} (generationJobId: ${generationJobId}): ${dto.count} ${dto.sourceType} question(s) on "${dto.topic}"`,
-        );
+        // Poll for new jobs every 5 seconds
+        this.pollInterval = setInterval(() => {
+            this.processNextJob().catch((error) => {
+                this.logger.error(`Worker error: ${error.message}`, error.stack);
+            });
+        }, 5000);
+    }
+
+    private async processNextJob(): Promise<void> {
+        if (!this.isRunning) return;
 
         try {
-            // Update job status to "processing"
-            await this.prisma.generationJob.update({
-                where: { id: generationJobId },
-                data: { status: 'processing' },
-            });
+            // Atomically claim the next queued job using SKIP LOCKED
+            const job = await this.questionQueueService.claimNextJob(this.workerId);
 
-            // Notify the user that generation is in progress
-            this.gateway.emitJobProcessing(userId, {
-                jobId: generationJobId,
-                status: 'processing',
-                message: `Generating ${dto.count} ${dto.sourceType} question(s) on "${dto.topic}"...`,
-            });
-
-            // ============================================
-            // RUN THE ACTUAL LLM-BASED QUESTION GENERATION
-            // ============================================
-            const result = await this.questionGenerationService.generateQuestions(dto);
-
-            const questionIds = result.questions.map((q) => q.id);
-
-            // Update job record to "completed"
-            await this.prisma.generationJob.update({
-                where: { id: generationJobId },
-                data: {
-                    status: 'completed',
-                    questionIds,
-                    questionCount: result.questions.length,
-                },
-            });
-
-            // ============================================
-            // EMIT COMPLETION EVENT VIA SOCKET.IO
-            // ============================================
-            this.gateway.emitJobCompleted(userId, {
-                jobId: generationJobId,
-                status: 'completed',
-                message: `Successfully generated ${result.questions.length} ${dto.sourceType} question(s) on "${dto.topic}"`,
-                questionIds,
-                questionCount: result.questions.length,
-                sourceType: dto.sourceType,
-            });
+            if (!job) {
+                // No jobs to process
+                return;
+            }
 
             this.logger.log(
-                `Job ${job.id} completed: ${result.questions.length} questions generated`,
+                `Processing job ${job.id} (user: ${job.userId || 'anonymous'})`,
             );
 
-            return result;
-        } catch (error: any) {
-            this.logger.error(
-                `Job ${job.id} failed: ${error.message}`,
-                error.stack,
-            );
+            try {
+                // Run the actual LLM-based question generation
+                const result = await this.questionGenerationService.generateQuestions(job.params);
 
-            // Update job record to "failed"
-            await this.prisma.generationJob.update({
-                where: { id: generationJobId },
-                data: {
-                    status: 'failed',
+                const questionIds = result.questions.map((q) => q.id);
+
+                // Update job record to "completed"
+                await this.questionQueueService.updateJobStatus(job.id, 'completed', {
+                    questionIds,
+                    questionCount: result.questions.length,
+                });
+
+                this.logger.log(
+                    `Job ${job.id} completed: ${result.questions.length} questions generated`,
+                );
+            } catch (error: any) {
+                this.logger.error(
+                    `Job ${job.id} failed: ${error.message}`,
+                    error.stack,
+                );
+
+                // Update job record to "failed"
+                await this.questionQueueService.updateJobStatus(job.id, 'failed', {
                     errorMessage: error.message,
-                },
-            });
-
-            // Emit failure event
-            this.gateway.emitJobFailed(userId, {
-                jobId: generationJobId,
-                status: 'failed',
-                message: `Question generation failed: ${error.message}`,
-                error: error.message,
-            });
-
-            // Re-throw so BullMQ marks the job as failed
-            throw error;
+                });
+            }
+        } catch (error: any) {
+            this.logger.error(`Failed to claim/process job: ${error.message}`);
         }
+    }
+
+    async stopWorker() {
+        this.isRunning = false;
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
+        this.logger.log('Question generation worker stopped');
     }
 }

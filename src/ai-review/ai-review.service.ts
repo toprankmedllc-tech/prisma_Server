@@ -1,7 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AiReviewTrigger } from '@prisma/client';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { LLMService } from '../llm/llm.service';
 import { ChromaService } from '../chroma/chroma.service';
@@ -23,8 +21,6 @@ export class AiReviewService {
     private readonly logger = new Logger(AiReviewService.name);
 
     constructor(
-        @InjectQueue('ai-review')
-        private readonly aiReviewQueue: Queue,
         private readonly prisma: PrismaService,
         private readonly llmService: LLMService,
         private readonly chromaService: ChromaService,
@@ -38,30 +34,21 @@ export class AiReviewService {
     // ============================================
     // QUEUE AI REVIEW FOR A QUESTION (used by QuestionGenerationService)
     // ============================================
+    // Instead of BullMQ, we mark the question as needing review in PostgreSQL.
+    // The background worker will pick it up via SKIP LOCKED.
     async queueAiReviewForQuestion(
         questionId: string,
         options?: { autoPublish?: boolean; autoRegenerate?: boolean },
     ): Promise<void> {
         this.logger.log(`Queueing AI review for question ${questionId}`);
 
-        await this.aiReviewQueue.add(
-            'ai-review-single',
-            {
-                type: 'single',
-                questionId,
-                options: {
-                    // AI review is informational only; publication is controlled by Quality Review.
-                    autoPublish: false,
-                    autoRegenerate: options?.autoRegenerate ?? false,
-                },
-            },
-            {
-                attempts: 3,
-                backoff: { type: 'exponential', delay: 5000 },
-                removeOnComplete: { age: 86400 },
-                removeOnFail: { age: 86400 },
-            },
-        );
+        // Mark the question as needing AI review by setting reviewed=false
+        // The background worker will find questions where reviewed=false
+        // and process them.
+        await this.prisma.question.update({
+            where: { id: questionId },
+            data: { reviewed: false },
+        });
     }
 
     // ============================================

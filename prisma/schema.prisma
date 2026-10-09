@@ -25,9 +25,6 @@ model User {
   role                   Role                    @default(STUDENT)
   isActive               Boolean                 @default(true)
   emailVerifiedAt        DateTime?
-  bio                    String?
-  avatarUrl              String?
-  displayStyle           DisplayStyle?           @default(TOPRANKMED)
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   reviewedQuestions      String[]                @default([])
@@ -35,6 +32,10 @@ model User {
   assignedQuestions      String[]                @default([])
   preferredSubjects      String[]                @default([])
   diamonds               Int                     @default(10)
+  avatarUrl              String?
+  bio                    String?
+  displayStyle           DisplayStyle?           @default(TOPRANKMED)
+  adaptiveSessions       AdaptiveSession[]
   arenaBattlesAsPlayer1  ArenaBattle[]           @relation("ArenaPlayer1")
   arenaBattlesAsPlayer2  ArenaBattle[]           @relation("ArenaPlayer2")
   arenaAnswers           ArenaBattleAnswer[]
@@ -60,7 +61,7 @@ model User {
   sessions               Session[]
   studySessions          StudySession[]
   userStats              UserStats?
-  adaptiveSessions       AdaptiveSession[]
+  subscriptions          Subscription[]
 
   @@map("users")
 }
@@ -210,8 +211,6 @@ model Question {
   sourceFile                 String?
   qid                        String?
   topicId                    String
-  organSystemId              String?
-  disciplineId               String?
   cognitiveLevel             CognitiveLevel?
   difficulty                 Difficulty
   trapType                   String?
@@ -239,6 +238,9 @@ model Question {
   updatedAt                  DateTime                  @updatedAt
   rejected                   Boolean                   @default(false)
   originalQuestionId         String?
+  organSystemId              String?
+  disciplineId               String?
+  adaptiveSessionQuestions   AdaptiveSessionQuestion[]
   arenaBattleAnswers         ArenaBattleAnswer[]
   arenaBattleQuestions       ArenaBattleQuestion[]
   arenaTeamBattleAnswers     ArenaTeamBattleAnswer[]
@@ -246,11 +248,11 @@ model Question {
   choices                    Choice[]
   examQuestions              ExamQuestion[]
   qualityReview              QualityReview?
+  discipline                 Discipline?               @relation("QuestionDiscipline", fields: [disciplineId], references: [id])
+  organSystem                OrganSystem?              @relation(fields: [organSystemId], references: [id])
   originalQuestion           Question?                 @relation("QuestionReplacements", fields: [originalQuestionId], references: [id])
   aiReplacements             Question[]                @relation("QuestionReplacements")
   topic                      Topic                     @relation(fields: [topicId], references: [id])
-  organSystem                OrganSystem?              @relation(fields: [organSystemId], references: [id])
-  discipline                 Discipline?               @relation("QuestionDiscipline", fields: [disciplineId], references: [id])
   attempts                   QuestionAttempt[]
   questionFlags              QuestionFlag[]
   questionHighlights         QuestionHighlight[]
@@ -262,7 +264,6 @@ model Question {
   vitals                     Vitals?
   wrongOptions               WrongOption[]
   aiReviews                  AiReview[]
-  adaptiveSessionQuestions AdaptiveSessionQuestion[]
 }
 
 model QuestionRevision {
@@ -321,55 +322,120 @@ model UserStats {
   user           User     @relation(fields: [userId], references: [id])
 }
 
+model Plan {
+  id              String         @id @default(cuid())
+  name            String
+  slug            String         @unique
+  description     String?
+  amount          Int
+  currency        String         @default("usd")
+  interval        PlanInterval   @default(MONTH)
+  discountPercent Int?
+  discountAmount  Int?
+  effectiveAmount Int
+  isActive        Boolean        @default(true)
+  isPopular       Boolean        @default(false)
+  sortOrder       Int            @default(0)
+  stripeProductId String?
+  stripePriceId   String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  features        PlanFeature[]
+  subscriptions   Subscription[]
+
+  @@map("plans")
+}
+
+model PlanFeature {
+  id     String @id @default(cuid())
+  planId String
+  label  String
+  order  Int    @default(0)
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@map("plan_features")
+}
+
+model Subscription {
+  id                      String             @id @default(cuid())
+  userId                  String
+  planId                  String
+  status                  SubscriptionStatus @default(PENDING)
+  stripeCustomerId        String?
+  stripeSubscriptionId    String?
+  stripeCheckoutSessionId String?
+  currentPeriodStart      DateTime?
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean            @default(false)
+  canceledAt              DateTime?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  payments                Payment[]
+  plan                    Plan               @relation(fields: [planId], references: [id])
+  user                    User               @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  subscriptionId        String
+  amount                Int
+  currency              String
+  status                PaymentStatus @default(PENDING)
+  stripePaymentIntentId String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  subscription          Subscription  @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId, createdAt])
+  @@map("payments")
+}
+
 model AdaptiveSession {
-  id                 String                 @id @default(cuid())
+  id                 String                    @id @default(cuid())
   userId             String
   disciplineId       String?
   organSystemId      String?
-  topicIds           String[]               @default([])
-  preferredTopicIds  String[]               @default([])
-  adaptivePercentage Int                    @default(50)
-  status             AdaptiveSessionStatus  @default(IN_PROGRESS)
-  currentQuestionNum Int                    @default(1)
-  questionCount      Int                    @default(0)
-  startedAt          DateTime               @default(now())
+  topicIds           String[]                  @default([])
+  preferredTopicIds  String[]                  @default([])
+  adaptivePercentage Int                       @default(50)
+  status             AdaptiveSessionStatus     @default(IN_PROGRESS)
+  currentQuestionNum Int                       @default(1)
+  questionCount      Int                       @default(0)
+  startedAt          DateTime                  @default(now())
   completedAt        DateTime?
-  user               User                   @relation(fields: [userId], references: [id])
+  user               User                      @relation(fields: [userId], references: [id])
   questions          AdaptiveSessionQuestion[]
-  
+
   @@index([userId, status])
 }
 
 model AdaptiveSessionQuestion {
-  id          String                   @id @default(cuid())
-  sessionId   String
-  questionId  String
-  order       Int
-  attempts    AdaptiveQuestionAttempt[]
-  session     AdaptiveSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  question    Question                 @relation(fields: [questionId], references: [id])
-  
+  id         String                    @id @default(cuid())
+  sessionId  String
+  questionId String
+  order      Int
+  attempts   AdaptiveQuestionAttempt[]
+  question   Question                  @relation(fields: [questionId], references: [id])
+  session    AdaptiveSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
   @@unique([sessionId, order])
   @@index([sessionId])
 }
 
 model AdaptiveQuestionAttempt {
-  id                String                   @id @default(cuid())
+  id                String                  @id @default(cuid())
   sessionQuestionId String
   selectedChoiceId  String?
   isCorrect         Boolean?
-  timeSpentSec      Int                      @default(0)
-  attemptNumber     Int                      @default(1)
-  answeredAt        DateTime                 @default(now())
-  sessionQuestion   AdaptiveSessionQuestion  @relation(fields: [sessionQuestionId], references: [id])
-  
-  @@index([sessionQuestionId])
-}
+  timeSpentSec      Int                     @default(0)
+  attemptNumber     Int                     @default(1)
+  answeredAt        DateTime                @default(now())
+  sessionQuestion   AdaptiveSessionQuestion @relation(fields: [sessionQuestionId], references: [id])
 
-enum AdaptiveSessionStatus {
-  IN_PROGRESS
-  COMPLETED
-  ABANDONED
+  @@index([sessionQuestionId])
 }
 
 model QuestionResponse {
@@ -574,9 +640,9 @@ model Discipline {
   name          String         @unique
   description   String?
   createdAt     DateTime       @default(now())
+  questions     Question[]     @relation("QuestionDiscipline")
   studySessions StudySession[]
   topics        Topic[]
-  questions     Question[]     @relation("QuestionDiscipline")
 }
 
 model Topic {
@@ -586,9 +652,9 @@ model Topic {
   parentId     String?
   createdAt    DateTime   @default(now())
   questions    Question[]
+  discipline   Discipline @relation(fields: [disciplineId], references: [id])
   parent       Topic?     @relation("TopicHierarchy", fields: [parentId], references: [id])
   children     Topic[]    @relation("TopicHierarchy")
-  discipline   Discipline @relation(fields: [disciplineId], references: [id])
 }
 
 model Conversation {
@@ -828,6 +894,32 @@ model GuildMessage {
   sender    User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([guildId, createdAt])
+}
+
+enum PlanInterval {
+  MONTH
+  YEAR
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum AdaptiveSessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
 }
 
 enum Role {

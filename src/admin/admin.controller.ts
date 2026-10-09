@@ -32,7 +32,6 @@ import {
 import { QuestionsService } from '../questions/questions.service';
 import { QuestionGenerationService } from '../questions/question-generation.service';
 import { GenerateQuestionsDto } from '../questions/dto/request.dto';
-import { GenerateQuestionsResponseDto } from '../questions/dto/response.dto';
 import { DocumentsService } from '../documents/documents.service';
 import { DocumentIngestionService } from '../documents/documents-ingestion.service';
 import { DocumentResponseDto, DocumentDetailResponseDto, DocumentIngestionResultDto } from '../documents/dto/document-response.dto';
@@ -198,30 +197,14 @@ export class AdminController {
     }
 
     // ============================================
-    // GENERATE QUESTIONS (AI) - SYNC (original)
-    // ============================================
-    @Post('questions/generate')
-    @HttpCode(HttpStatus.CREATED)
-    @ApiOperation({
-        summary: 'Generate AI questions (sync)',
-        description:
-            'Uses RAG (ChromaDB + LLM) to generate USMLE-style questions based on topic, difficulty, and question type. Returns newly created questions. This is the admin-facing endpoint for the question generation tab.',
-    })
-    async generateQuestions(
-        @Body() dto: GenerateQuestionsDto,
-    ): Promise<GenerateQuestionsResponseDto> {
-        return this.questionGenerationService.generateQuestions(dto);
-    }
-
-    // ============================================
-    // GENERATE QUESTIONS (AI) - ASYNC (queue-based)
+    // GENERATE QUESTIONS (AI) - ASYNC (PostgreSQL-based)
     // ============================================
     @Post('questions/generate-async')
     @HttpCode(HttpStatus.ACCEPTED)
     @ApiOperation({
         summary: 'Queue AI question generation (async)',
         description:
-            'Queues a question generation job in the background using BullMQ. Returns a job ID immediately. The frontend can use Socket.IO to listen for completion events on "generation:completed" with the jobId and generated question IDs.',
+            'Creates a question generation job in PostgreSQL. Returns a job ID immediately. The frontend can poll GET /admin/queue/jobs/:jobId to check status.',
     })
     async generateQuestionsAsync(
         @Req() req: RequestWithUser,
@@ -266,25 +249,27 @@ export class AdminController {
     }
 
     // ============================================
-    // QUEUE DASHBOARD: Redis connection status & queue metrics
+    // QUEUE DASHBOARD: Get generation job status
     // ============================================
-    @Get('queue/status')
+    @Get('queue/jobs/:jobId')
     @ApiOperation({
-        summary: 'Redis connection status & queue metrics',
+        summary: 'Get generation job status',
         description:
-            'Returns whether Redis is connected and the current BullMQ queue job counts (waiting, active, completed, failed, delayed).',
+            'Returns the current status of a question generation job from PostgreSQL.',
     })
-    async getQueueStatus(): Promise<{
-        redisConnected: boolean;
-        queueMetrics: {
-            waiting: number;
-            active: number;
-            completed: number;
-            failed: number;
-            delayed: number;
-        };
-    }> {
-        return this.questionQueueService.getQueueMetrics();
+    async getGenerationJobStatus(
+        @Param('jobId') jobId: string,
+    ): Promise<{
+        id: string;
+        status: string;
+        params: any;
+        questionIds: string[];
+        questionCount: number;
+        errorMessage: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+    } | null> {
+        return this.questionQueueService.getJobStatus(jobId);
     }
 
     // ============================================
@@ -340,39 +325,23 @@ export class AdminController {
     }
 
     // ============================================
-    // QUEUE DASHBOARD: Get BullMQ jobs by status
+    // QUEUE DASHBOARD: Get queue status (metrics)
     // ============================================
-    @Get('queue/jobs/:status')
+    @Get('queue/status')
     @ApiOperation({
-        summary: 'Get BullMQ jobs by status',
+        summary: 'Get queue status (metrics)',
         description:
-            'Returns BullMQ jobs directly from Redis for the given status (waiting, active, completed, failed, delayed). Includes detailed job info like attempts, timestamps, and error stacktraces.',
+            'Returns current queue metrics: number of queued, processing, completed, and failed jobs.',
     })
-    @ApiQuery({
-        name: 'limit',
-        required: false,
-        type: Number,
-        description: 'Number of jobs to return (default 20)',
-    })
-    async getBullJobsByStatus(
-        @Param('status') status: string,
-        @Query('limit') limit?: string,
-    ): Promise<Array<{
-        bullJobId: string | number | undefined;
-        generationJobId: string;
-        status: string;
-        data: any;
-        failedReason?: string;
-        stacktrace?: string[];
-        processedOn?: string;
-        finishedOn?: string;
-        createdAt?: string;
-        attemptsMade: number;
-    }>> {
-        return this.questionQueueService.getBullJobsByStatus(
-            status as any,
-            limit ? parseInt(limit) : 20,
-        );
+    async getQueueStatus(): Promise<{
+        queueMetrics: {
+            queued: number;
+            processing: number;
+            completed: number;
+            failed: number;
+        };
+    }> {
+        return this.questionQueueService.getQueueMetrics();
     }
 
     // ============================================

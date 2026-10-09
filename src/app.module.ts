@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { BullModule } from '@nestjs/bullmq';
+import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ExamsModule } from './exams/exams.module';
@@ -20,6 +19,7 @@ import { ArenaModule } from './arena/arena.module';
 import { SocialModule } from './social/social.module';
 import { ReviewModule } from './review/review.module';
 import { AdaptiveModule } from './adaptive/adaptive.module';
+import { BillingModule } from './billing/billing.module';
 
 @Module({
   imports: [
@@ -27,49 +27,6 @@ import { AdaptiveModule } from './adaptive/adaptive.module';
       isGlobal: true,
       envFilePath: '.env',
       load: [configuration],
-    }),
-    // BullMQ root configuration (Redis connection)
-    BullModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => {
-        // Prefer a full REDIS_URL (e.g. Upstash, Redis Cloud, Railway) when set.
-        // Otherwise fall back to individual REDIS_HOST/PORT/PASSWORD/DB fields.
-        const redisUrl = configService.get<string>('REDIS_URL', '');
-
-        let connection: Record<string, any>;
-        if (redisUrl) {
-          connection = { url: redisUrl };
-        } else {
-          const redisHost = configService.get<string>('REDIS_HOST', 'localhost');
-          const redisPort = configService.get<number>('REDIS_PORT', 6379);
-          const redisPassword = configService.get<string>('REDIS_PASSWORD', '');
-          const redisDb = configService.get<number>('REDIS_DB', 0);
-
-          connection = {
-            host: redisHost,
-            port: redisPort,
-            db: redisDb,
-          };
-
-          if (redisPassword) {
-            connection.password = redisPassword;
-          }
-        }
-
-        return {
-          connection,
-          defaultJobOptions: {
-            removeOnComplete: { age: 86400 },
-            removeOnFail: { age: 86400 },
-            attempts: 3,
-            backoff: {
-              type: 'exponential' as const,
-              delay: 5000,
-            },
-          },
-        };
-      },
     }),
     AuthModule,
     DashboardModule,
@@ -91,6 +48,7 @@ import { AdaptiveModule } from './adaptive/adaptive.module';
     LLMModule,
     DocumentsModule,
     QuestionQueueModule,
+    BillingModule,
 
 
 

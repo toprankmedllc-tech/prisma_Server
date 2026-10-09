@@ -22,11 +22,10 @@ export default () => ({
         mode: process.env.CHROMA_MODE || 'cloud', // 'cloud' or 'local'
     },
 
-    redis: {
-        url: process.env.REDIS_URL || "rediss://default:gQAAAAAAAaVyAAIgcDIxNTU0Mzk4NDlmZGM0NjYwYWI4YTA4YWE4YWRmODRkZA@probable-dolphin-107890.upstash.io:6379",
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT, 10) : 6379,
-        password: process.env.REDIS_PASSWORD,
-        db: process.env.REDIS_DB ? parseInt(process.env.REDIS_DB, 10) : 0,
+    billing: {
+        stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+        stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+        // Where Stripe redirects after checkout (client app origin)
+        frontendUrl: process.env.STRIPE_SUCCESS_URL_BASE || 'http://localhost:3000',
     },
 });

@@ -27,7 +27,9 @@ async function bootstrap() {
     // Don't exit — let the server continue running
   });
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    rawBody: true, // needed for Stripe webhook signature verification
+  });
   
   // Apply one response shape to successful and failed API requests.
   app.useGlobalInterceptors(new ResponseInterceptor());
@@ -42,6 +44,7 @@ async function bootstrap() {
     'https://usmle-review.vercel.app',
     'https://api.toprankmd.com',
     'http://localhost:3000',
+    'http://localhost:3001',
     'http://localhost:4000',     // adding this here for cors error check 
   ];
 
@@ -66,6 +69,14 @@ async function bootstrap() {
       whitelist: true,
     }),
   );
+
+  // Stripe webhooks need the raw body; skip JSON parsing for that route.
+  app.use((req: any, res: any, next: any) => {
+    if (req.originalUrl?.includes('/billing/webhooks/stripe')) {
+      req.headers['content-type'] = 'application/json';
+    }
+    next();
+  });
 
   const config = new DocumentBuilder()
     .setTitle('TopRankMed API')

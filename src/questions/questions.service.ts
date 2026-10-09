@@ -323,11 +323,21 @@ export class QuestionsService {
             },
         });
 
+        // Transform topic.discipline to topic.subject for frontend compatibility
+        const transformedData = data.map((q: any) => ({
+            ...q,
+            topic: {
+                id: q.topic.id,
+                name: q.topic.name,
+                subject: q.topic.discipline,
+            },
+        }));
+
         const page = Math.floor(skip / take) + 1;
         const limit = take;
 
         return {
-            data,
+            data: transformedData,
             total,
             page,
             limit,
